@@ -1,71 +1,79 @@
-import discord
-from discord.ext import tasks
 import os
+import discord
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
-MESSAGE_COOLDOWN = 5 
+CHANNEL_ID = 1387002318247034900
+ROLE_ID = 1106806475080335410
+MESSAGE_COOLDOWN = 5
 
-last_message_id = None
-last_message_author = 818428347151024199
 last_message_timestamp = None
-role_id = 1106806475080335410
-channel_id = 1387002318247034900
+last_message_author_id = 818428347151024199
 
 
 @client.event
 async def on_ready():
-    print(f"We have logged in as {client.user}")
-    if not bg_task.is_running():
-        bg_task.start()
+    global last_message_timestamp
+    last_message_timestamp = discord.utils.utcnow()
+    print(f"Logged in as {client.user} - Awakener monitor active.")
 
 
-@tasks.loop(seconds=2)
-async def bg_task():
-    global last_message_author, last_message_id
-    try:
-        channel = client.get_channel(channel_id)
-        if channel is None:
-            return
+@client.event
+async def on_message(message: discord.Message):
+    global last_message_timestamp, last_message_author_id
 
-        message = None
-        async for candidate in channel.history(limit=100):
-            if not candidate.author.bot:
-                message = candidate
-                break
-        if message is None:
-            return
+    if (
+        message.author.bot
+        or message.webhook_id is not None
+        or message.channel.id != CHANNEL_ID
+    ):
+        return
 
-        if message.id == last_message_id:
-            return
+    now = discord.utils.utcnow()
 
-        if (discord.utils.utcnow() - message.created_at).total_seconds() < MESSAGE_COOLDOWN:
-            return
+    if last_message_timestamp is not None:
+        elapsed = (now - last_message_timestamp).total_seconds()
 
-        guild = channel.guild
-        role = guild.get_role(role_id)
-        if role is None:
-            return
+        if elapsed >= MESSAGE_COOLDOWN:
+            guild = message.guild
+            role = guild.get_role(ROLE_ID)
 
-        previous_author = guild.get_member(last_message_author)
-        if previous_author is None:
-            try:
-                previous_author = await guild.fetch_member(last_message_author)
-            except discord.NotFound:
-                previous_author = None
+            if role:
+                if (
+                    last_message_author_id
+                    and last_message_author_id != message.author.id
+                ):
+                    prev_member = guild.get_member(last_message_author_id)
+                    if prev_member is None:
+                        try:
+                            prev_member = await guild.fetch_member(
+                                last_message_author_id
+                            )
+                        except (discord.NotFound, discord.HTTPException):
+                            prev_member = None
 
-        if previous_author is not None:
-            await previous_author.remove_roles(role)
+                    if prev_member and role in prev_member.roles:
+                        try:
+                            await prev_member.remove_roles(
+                                role, reason="Chat awakened by someone else"
+                            )
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
 
-        member = guild.get_member(message.author.id) or await guild.fetch_member(
-            message.author.id
-        )
-        await member.add_roles(role)
-        last_message_author = member.id
-        last_message_id = message.id
-    except Exception as error:
-        print(f"Background task error: {error}")
+                try:
+                    await message.author.add_roles(role, reason="Revived silent chat")
+                    await message.channel.send(
+                        f"🔥 {message.author.mention} revived the chat after "
+                        f"{int(elapsed // 60)} minutes of silence and claimed the **{role.name}** role!"
+                    )
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+                last_message_author_id = message.author.id
+
+
+    last_message_timestamp = now
 
 
 client.run(os.getenv("DISCORD_TOKEN"))
