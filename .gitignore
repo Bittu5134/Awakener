@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Awakener bot database
+awakener.db
+awakener.db-wal
+awakener.db-shm
