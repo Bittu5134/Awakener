@@ -1,5 +1,5 @@
+
 import os
-import json
 import discord
 
 intents = discord.Intents.default()
@@ -8,27 +8,53 @@ client = discord.Client(intents=intents)
 CHANNEL_ID = 1387002318247034900
 ROLE_ID = 1106806475080335410
 MESSAGE_COOLDOWN = 5
-MESSAGE_EMBED = (
-    '{"description": "🔥 {{author}} revived the chat and claimed '
-    'the {{role}} role!"}'
-)
 
 last_message_timestamp = None
 last_message_author_id = 818428347151024199
-last_sent_message = None
+
+class AwakenerView(discord.ui.LayoutView):
+    def __init__(
+        self,
+        author: discord.Member | None = None,
+        role: discord.Role | None = None,
+    ):
+        super().__init__(timeout=None)
+
+        message = (
+            f"### The chat was revived by {author.mention} and the {role.name} role was claimed!"
+            if author is not None and role is not None
+            else "### The chat was revived!"
+        )
+
+        button = discord.ui.Button(
+            label="Say hi",
+            style=discord.ButtonStyle.primary,
+            custom_id="awakener:say_hi",
+        )
+        button.callback = self.say_hi
+
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(message),
+                discord.ui.ActionRow(button),
+            )
+        )
+
+    async def say_hi(self, interaction: discord.Interaction):
+        await interaction.response.send_message("hi", ephemeral=True)
 
 
 @client.event
 async def on_ready():
-    global last_message_timestamp, last_sent_message
+    global last_message_timestamp
     last_message_timestamp = discord.utils.utcnow()
-    last_sent_message = None
+    client.add_view(AwakenerView())
     print(f"Logged in as {client.user} - Awakener monitor active.")
 
 
 @client.event
 async def on_message(message: discord.Message):
-    global last_message_timestamp, last_message_author_id, last_sent_message
+    global last_message_timestamp, last_message_author_id
 
     if (
         message.author.bot
@@ -71,23 +97,8 @@ async def on_message(message: discord.Message):
 
                 try:
                     await message.author.add_roles(role, reason="Revived silent chat")
-                    embed_data = MESSAGE_EMBED
-                    placeholders = {
-                        "{{author}}": message.author.mention,
-                        "{{role}}": role.mention,
-                    }
-                    for placeholder, value in placeholders.items():
-                        embed_data = embed_data.replace(placeholder, value)
-
-                    embed = discord.Embed.from_dict(json.loads(embed_data))
-                    if last_sent_message is not None:
-                        try:
-                            await last_sent_message.delete()
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            pass
-
-                    last_sent_message = await message.channel.send(
-                        embed=embed,
+                    await message.channel.send(
+                        view=AwakenerView(message.author, role),
                         reference=message,
                         mention_author=False,
                     )
