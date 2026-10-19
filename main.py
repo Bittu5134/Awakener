@@ -36,14 +36,15 @@ async def on_message(message: discord.Message):
         elapsed = (now - last_message_timestamp).total_seconds()
 
         if elapsed >= MESSAGE_COOLDOWN:
+            if message.author.id == last_message_author_id:
+                last_message_timestamp = now
+                return
+
             guild = message.guild
             role = guild.get_role(ROLE_ID)
 
             if role:
-                if (
-                    last_message_author_id
-                    and last_message_author_id != message.author.id
-                ):
+                if last_message_author_id:
                     prev_member = guild.get_member(last_message_author_id)
                     if prev_member is None:
                         try:
@@ -71,7 +72,6 @@ async def on_message(message: discord.Message):
                     pass
 
                 last_message_author_id = message.author.id
-
 
     last_message_timestamp = now
 
