@@ -1,4 +1,5 @@
 import os
+import json
 import discord
 
 intents = discord.Intents.default()
@@ -7,21 +8,27 @@ client = discord.Client(intents=intents)
 CHANNEL_ID = 1387002318247034900
 ROLE_ID = 1106806475080335410
 MESSAGE_COOLDOWN = 5
+MESSAGE_EMBED = (
+    '{"description": "🔥 {{author}} revived the chat and claimed '
+    'the {{role}} role!"}'
+)
 
 last_message_timestamp = None
 last_message_author_id = 818428347151024199
+last_sent_message = None
 
 
 @client.event
 async def on_ready():
-    global last_message_timestamp
+    global last_message_timestamp, last_sent_message
     last_message_timestamp = discord.utils.utcnow()
+    last_sent_message = None
     print(f"Logged in as {client.user} - Awakener monitor active.")
 
 
 @client.event
 async def on_message(message: discord.Message):
-    global last_message_timestamp, last_message_author_id
+    global last_message_timestamp, last_message_author_id, last_sent_message
 
     if (
         message.author.bot
@@ -64,9 +71,25 @@ async def on_message(message: discord.Message):
 
                 try:
                     await message.author.add_roles(role, reason="Revived silent chat")
-                    await message.channel.send(
-                        f"🔥 {message.author.mention} revived the chat after "
-                        f"{int(elapsed // 60)} minutes of silence and claimed the **{role.name}** role!"
+                    embed_data = MESSAGE_EMBED
+                    placeholders = {
+                        "{{author}}": message.author.mention,
+                        "{{role}}": role.mention,
+                    }
+                    for placeholder, value in placeholders.items():
+                        embed_data = embed_data.replace(placeholder, value)
+
+                    embed = discord.Embed.from_dict(json.loads(embed_data))
+                    if last_sent_message is not None:
+                        try:
+                            await last_sent_message.delete()
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
+
+                    last_sent_message = await message.channel.send(
+                        embed=embed,
+                        reference=message,
+                        mention_author=False,
                     )
                 except (discord.Forbidden, discord.HTTPException):
                     pass
