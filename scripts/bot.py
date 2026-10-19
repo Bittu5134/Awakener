@@ -13,7 +13,6 @@ from .ui import (
     InfoView,
     PerksView,
     build_claim_text,
-    build_config_embed,
     build_status_text,
 )
 
@@ -28,7 +27,7 @@ async def awakener_command(interaction: discord.Interaction) -> None:
     bot = interaction.client
     assert isinstance(bot, AwakenerBot)
     text = build_status_text(interaction.guild, bot)
-    await interaction.response.send_message(text, view=AwakenerStatusView())
+    await interaction.response.send_message(view=AwakenerStatusView(text))
 
 
 @app_commands.command(name="config", description="Configure the Awakener bot")
@@ -37,10 +36,9 @@ async def awakener_command(interaction: discord.Interaction) -> None:
 async def config_command(interaction: discord.Interaction) -> None:
     bot = interaction.client
     assert isinstance(bot, AwakenerBot)
-    cfg = bot.configs.get(interaction.guild_id)
+    cfg = bot.configs.get(interaction.guild_id or 0)
     await interaction.response.send_message(
-        embed=build_config_embed(cfg or db.GuildConfig(guild_id=interaction.guild_id)),
-        view=ConfigView(),
+        view=ConfigView(cfg),
         ephemeral=True,
     )
 
@@ -112,7 +110,11 @@ class AwakenerBot(discord.Client):
             return
 
         store_config = self.configs.get(message.guild.id)
-        if store_config is None or not store_config.channel_id or not store_config.role_id:
+        if (
+            store_config is None
+            or not store_config.channel_id
+            or not store_config.role_id
+        ):
             return
         if message.channel.id != store_config.channel_id:
             return
@@ -164,8 +166,7 @@ class AwakenerBot(discord.Client):
         text = build_claim_text(message.author, role)
         try:
             await message.channel.send(
-                content=text,
-                view=AwakenerStatusView(),
+                view=AwakenerStatusView(text),
                 reference=message,
                 mention_author=False,
                 silent=True,
@@ -206,4 +207,6 @@ class AwakenerBot(discord.Client):
                 guild.id,
                 exc,
             )
+
+
 # aiosqlite.Connection type is only needed for annotations.

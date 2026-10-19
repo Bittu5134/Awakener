@@ -84,8 +84,7 @@ async def _migrate_cooldown_seconds(db: aiosqlite.Connection) -> None:
         return
 
     log.info("Migrating guild_config from cooldown_mins to cooldown_secs...")
-    await db.executescript(
-        """
+    await db.executescript("""
         ALTER TABLE guild_config RENAME TO guild_config_legacy;
         CREATE TABLE guild_config (
             guild_id      INTEGER PRIMARY KEY,
@@ -99,8 +98,7 @@ async def _migrate_cooldown_seconds(db: aiosqlite.Connection) -> None:
         SELECT guild_id, channel_id, role_id, cooldown_mins * 60, perks_text
         FROM guild_config_legacy;
         DROP TABLE guild_config_legacy;
-        """
-    )
+        """)
     await db.commit()
     log.info("Migration complete.")
 

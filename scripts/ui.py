@@ -1,4 +1,4 @@
-"""Embeds, persistent views, and the `/config` panel."""
+"""Components V2 panels, persistent views, and the /config panel."""
 
 from typing import cast
 
@@ -15,8 +15,9 @@ def _store(interaction: discord.Interaction) -> ConfigStore:
     return cast("ConfigStore", interaction.client)
 
 
-def _config_for(store: ConfigStore, guild_id: int) -> GuildConfig:
-    return store.configs.get(guild_id) or GuildConfig(guild_id=guild_id)
+def _config_for(store: ConfigStore, guild_id: int | None) -> GuildConfig:
+    gid = guild_id or 0
+    return store.configs.get(gid) or GuildConfig(guild_id=gid)
 
 
 def _parse_cooldown(raw: str) -> int | None:
@@ -35,24 +36,58 @@ def _parse_cooldown(raw: str) -> int | None:
 
 
 def _format_cooldown_input(secs: int) -> str:
-    """Show e.g. '10s' or '60' in the modal prefill."""
     if secs % 60 == 0:
         return str(secs // 60)
     return f"{secs}s"
 
 
+def _nav_button(label: str, emoji: str, custom_id: str, callback) -> discord.ui.Button:
+    button = discord.ui.Button(
+        label=label,
+        emoji=emoji,
+        style=discord.ButtonStyle.secondary,
+        custom_id=custom_id,
+    )
+    button.callback = callback
+    return button
+
+
+def _link_buttons() -> list[discord.ui.Button]:
+    buttons: list[discord.ui.Button] = []
+    if config.INVITE_URL:
+        buttons.append(
+            discord.ui.Button(
+                label="Invite",
+                emoji="📨",
+                style=discord.ButtonStyle.link,
+                url=config.INVITE_URL,
+            )
+        )
+    if config.PATREON_URL:
+        buttons.append(
+            discord.ui.Button(
+                label="Patreon",
+                emoji="💖",
+                style=discord.ButtonStyle.link,
+                url=config.PATREON_URL,
+            )
+        )
+    return buttons
+
+
 # --------------------------------------------------------------------------- #
-# Embeds
+# Plain text helpers (used as TextDisplay content)
 # --------------------------------------------------------------------------- #
 
 
 def build_status_text(guild: discord.Guild, store: ConfigStore) -> str:
-    """Single-line plain-text message for /awakener."""
     cfg = store.configs.get(guild.id)
     state = store.states.get(guild.id)
 
     if cfg is None or not cfg.channel_id or not cfg.role_id:
-        return "⚠️ Awakener is not configured yet. An admin can set it up with `/config`."
+        return (
+            "⚠️ Awakener is not configured yet. An admin can set it up with `/config`."
+        )
 
     role = guild.get_role(cfg.role_id)
     role_mention = role.mention if role else f"<@&{cfg.role_id}>"
@@ -63,188 +98,94 @@ def build_status_text(guild: discord.Guild, store: ConfigStore) -> str:
 
 
 def build_claim_text(author: discord.Member, role: discord.Role) -> str:
-    """Single-line plain-text message when a silent chat is revived."""
     return f"{role.mention} has been claimed by {author.mention}!"
 
 
-def build_info_embed(cfg: GuildConfig | None) -> discord.Embed:
-    cooldown = config.format_cooldown(cfg.cooldown_secs) if cfg else "not set"
-    channel = f"<#{cfg.channel_id}>" if cfg and cfg.channel_id else "not set"
-    role = f"<@&{cfg.role_id}>" if cfg and cfg.role_id else "not set"
-    return discord.Embed(
-        title="🔥 The Awakener Role — How It Works",
-        description=(
-            "Revive a silent chat and claim the Awakener role.\n\n"
-            "**Timer**\n"
-            f"The channel must stay silent for **{cooldown}** before a message can "
-            "claim the role.\n\n"
-            "**How it works**\n"
-            "The first person to speak after the silence claims the role. The "
-            "previous holder loses it. Sending another message yourself while you "
-            "hold the role does not re-claim it.\n\n"
-            f"**Channel:** {channel}\n**Role:** {role}"
-        ),
-        colour=COLOUR,
-    )
+# --------------------------------------------------------------------------- #
+# Public status view (claim messages and /awakener)
+# --------------------------------------------------------------------------- #
 
 
-def build_perks_embed(cfg: GuildConfig | None) -> discord.Embed:
-    perks = cfg.perks if cfg else []
-    return discord.Embed(
-        title="🔥 Awakener Perks",
-        description=(
+class AwakenerStatusView(discord.ui.LayoutView):
+    """Persistent. Pass the status or claim line as `text`."""
+
+    def __init__(self, text: str = "### 🔥 The Awakener") -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(text),
+                discord.ui.ActionRow(
+                    _nav_button("Info", "ℹ️", "awakener:info", self.show_info),
+                    _nav_button("Perks", "🎁", "awakener:perks", self.show_perks),
+                ),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def show_info(self, interaction: discord.Interaction) -> None:
+        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
+        await interaction.response.send_message(view=InfoView(cfg), ephemeral=True)
+
+    async def show_perks(self, interaction: discord.Interaction) -> None:
+        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
+        await interaction.response.send_message(view=PerksView(cfg), ephemeral=True)
+
+
+class InfoView(discord.ui.LayoutView):
+    def __init__(self, cfg: GuildConfig | None = None) -> None:
+        super().__init__(timeout=None)
+        cooldown = config.format_cooldown(cfg.cooldown_secs) if cfg else "not set"
+        channel = f"<#{cfg.channel_id}>" if cfg and cfg.channel_id else "not set"
+        role = f"<@&{cfg.role_id}>" if cfg and cfg.role_id else "not set"
+
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("### ℹ️ The Awakener"),
+                discord.ui.TextDisplay(
+                    f"**Timer:** the channel must be silent for **{cooldown}** before a message claims the role.\n"
+                    "**Rules:** the first to speak after silence claims it, and the previous holder loses it. "
+                    "Sending again while you hold it does nothing."
+                ),
+                discord.ui.Separator(),
+                discord.ui.TextDisplay(f"-# {channel} · {role}"),
+                discord.ui.ActionRow(
+                    _nav_button("Perks", "🎁", "awakener:info_to_perks", self.go_perks),
+                    *_link_buttons(),
+                ),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def go_perks(self, interaction: discord.Interaction) -> None:
+        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
+        await interaction.response.edit_message(view=PerksView(cfg))
+
+
+class PerksView(discord.ui.LayoutView):
+    def __init__(self, cfg: GuildConfig | None = None) -> None:
+        super().__init__(timeout=None)
+        perks = cfg.perks if cfg else []
+        body = (
             "\n".join(f"• {perk}" for perk in perks)
             if perks
             else config.DEFAULT_PERKS_MESSAGE
-        ),
-        colour=COLOUR,
-    )
-
-
-def build_config_embed(cfg: GuildConfig) -> discord.Embed:
-    perks = len(cfg.perks)
-    embed = discord.Embed(
-        title="⚙️ Awakener Configuration",
-        description="Pick an option below — changes save instantly.",
-        colour=COLOUR,
-    )
-    embed.add_field(
-        name="Channel",
-        value=f"<#{cfg.channel_id}>" if cfg.channel_id else "not set",
-        inline=True,
-    )
-    embed.add_field(
-        name="Role", value=f"<@&{cfg.role_id}>" if cfg.role_id else "not set", inline=True
-    )
-    embed.add_field(
-        name="Cooldown", value=config.format_cooldown(cfg.cooldown_secs), inline=True
-    )
-    embed.add_field(
-        name="Perks",
-        value=f"{perks} configured" if perks else "none",
-        inline=False,
-    )
-    return embed
-
-
-# --------------------------------------------------------------------------- #
-# Link button helpers
-# --------------------------------------------------------------------------- #
-
-
-def _add_external_links(view: discord.ui.View, row: int = 1) -> None:
-    if config.INVITE_URL:
-        view.add_item(
-            discord.ui.Button(
-                label="Invite",
-                style=discord.ButtonStyle.link,
-                url=config.INVITE_URL,
-                emoji="📨",
-                row=row,
-            )
         )
-    if config.PATREON_URL:
-        view.add_item(
-            discord.ui.Button(
-                label="Patreon",
-                style=discord.ButtonStyle.link,
-                url=config.PATREON_URL,
-                emoji="💖",
-                row=row,
+
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("### 🎁 Awakener Perks"),
+                discord.ui.TextDisplay(body),
+                discord.ui.ActionRow(
+                    _nav_button("Info", "ℹ️", "awakener:perks_to_info", self.go_info),
+                    *_link_buttons(),
+                ),
+                accent_colour=COLOUR,
             )
         )
 
-
-# --------------------------------------------------------------------------- #
-# Public status view (used on /awakener and claim messages)
-# --------------------------------------------------------------------------- #
-
-
-class AwakenerStatusView(discord.ui.View):
-    """Attached to `/awakener` and claim messages. Only Info and Perks buttons."""
-
-    def __init__(self) -> None:
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="Info",
-        style=discord.ButtonStyle.secondary,
-        emoji="ℹ️",
-        custom_id="awakener:info",
-    )
-    async def show_info(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def go_info(self, interaction: discord.Interaction) -> None:
         cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.send_message(
-            embed=build_info_embed(cfg),
-            view=InfoView(),
-            ephemeral=True,
-        )
-
-    @discord.ui.button(
-        label="Perks",
-        style=discord.ButtonStyle.secondary,
-        emoji="🎁",
-        custom_id="awakener:perks",
-    )
-    async def show_perks(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.send_message(
-            embed=build_perks_embed(cfg),
-            view=PerksView(),
-            ephemeral=True,
-        )
-
-
-class InfoView(discord.ui.View):
-    """Attached to the Info embed: has Perks, Invite, Patreon (and optional Help)."""
-
-    def __init__(self) -> None:
-        super().__init__(timeout=None)
-        _add_external_links(self, row=1)
-
-    @discord.ui.button(
-        label="Perks",
-        style=discord.ButtonStyle.secondary,
-        emoji="🎁",
-        custom_id="awakener:info_to_perks",
-        row=0,
-    )
-    async def go_to_perks(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.edit_message(
-            embed=build_perks_embed(cfg),
-            view=PerksView(),
-        )
-
-
-class PerksView(discord.ui.View):
-    """Attached to the Perks embed: has Info, Invite, Patreon (and optional Help)."""
-
-    def __init__(self) -> None:
-        super().__init__(timeout=None)
-        _add_external_links(self, row=1)
-
-    @discord.ui.button(
-        label="Info",
-        style=discord.ButtonStyle.secondary,
-        emoji="ℹ️",
-        custom_id="awakener:perks_to_info",
-        row=0,
-    )
-    async def go_to_info(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.edit_message(
-            embed=build_info_embed(cfg),
-            view=InfoView(),
-        )
+        await interaction.response.edit_message(view=InfoView(cfg))
 
 
 # --------------------------------------------------------------------------- #
@@ -252,77 +193,89 @@ class PerksView(discord.ui.View):
 # --------------------------------------------------------------------------- #
 
 
-class ConfigView(discord.ui.View):
-    """Persistent admin panel: channel/role selectors + cooldown & perks modals."""
+class ConfigView(discord.ui.LayoutView):
+    """Admin panel. Selects and buttons save instantly and re-render the panel."""
 
-    def __init__(self) -> None:
+    def __init__(self, cfg: GuildConfig | None = None) -> None:
         super().__init__(timeout=None)
+        cfg = cfg or GuildConfig(guild_id=0)
 
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect,
-        channel_types=[discord.ChannelType.text],
-        placeholder="Select the Awakener channel",
-        custom_id="config:channel",
-        row=0,
-    )
-    async def select_channel(
-        self, interaction: discord.Interaction, select: discord.ui.ChannelSelect
-    ) -> None:
+        channel = f"<#{cfg.channel_id}>" if cfg.channel_id else "not set"
+        role = f"<@&{cfg.role_id}>" if cfg.role_id else "not set"
+
+        self.channel_select = discord.ui.ChannelSelect(
+            channel_types=[discord.ChannelType.text],
+            placeholder="Awakener channel",
+            custom_id="config:channel",
+        )
+        self.channel_select.callback = self.on_channel
+
+        self.role_select = discord.ui.RoleSelect(
+            placeholder="Awakener role",
+            custom_id="config:role",
+        )
+        self.role_select.callback = self.on_role
+
+        cooldown_btn = discord.ui.Button(
+            label="Cooldown",
+            emoji="⏱️",
+            style=discord.ButtonStyle.primary,
+            custom_id="config:cooldown",
+        )
+        cooldown_btn.callback = self.on_cooldown
+
+        perks_btn = discord.ui.Button(
+            label="Edit Perks",
+            emoji="📝",
+            style=discord.ButtonStyle.primary,
+            custom_id="config:perks",
+        )
+        perks_btn.callback = self.on_perks
+
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("### ⚙️ Awakener Config"),
+                discord.ui.TextDisplay(
+                    f"**Channel** {channel}\n"
+                    f"**Role** {role}\n"
+                    f"**Cooldown** {config.format_cooldown(cfg.cooldown_secs)}\n"
+                    f"**Perks** {len(cfg.perks) if cfg.perks else 'none'}"
+                ),
+                discord.ui.Separator(),
+                discord.ui.ActionRow(self.channel_select),
+                discord.ui.ActionRow(self.role_select),
+                discord.ui.ActionRow(cooldown_btn, perks_btn),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def on_channel(self, interaction: discord.Interaction) -> None:
         store = _store(interaction)
-        guild_id = interaction.guild_id
-        cfg = _config_for(store, guild_id)
-        channel = select.values[0]
+        cfg = _config_for(store, interaction.guild_id)
+        channel = self.channel_select.values[0]
 
         if cfg.channel_id != channel.id:
             cfg.channel_id = channel.id
             await store.persist_config(cfg)
-            state = store.states.get(guild_id) or GuildState(guild_id=guild_id)
+            state = store.states.get(cfg.guild_id) or GuildState(guild_id=cfg.guild_id)
             state.last_message_ts = None
             await store.persist_state(state)
 
-        await interaction.response.edit_message(embed=build_config_embed(cfg))
+        await interaction.response.edit_message(view=ConfigView(cfg))
 
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select the Awakener role",
-        custom_id="config:role",
-        row=1,
-    )
-    async def select_role(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
+    async def on_role(self, interaction: discord.Interaction) -> None:
         store = _store(interaction)
         cfg = _config_for(store, interaction.guild_id)
-        cfg.role_id = select.values[0].id
+        cfg.role_id = self.role_select.values[0].id
         await store.persist_config(cfg)
-        await interaction.response.edit_message(embed=build_config_embed(cfg))
+        await interaction.response.edit_message(view=ConfigView(cfg))
 
-    @discord.ui.button(
-        label="Set Cooldown",
-        style=discord.ButtonStyle.primary,
-        emoji="⏱️",
-        custom_id="config:cooldown",
-        row=2,
-    )
-    async def set_cooldown(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+    async def on_cooldown(self, interaction: discord.Interaction) -> None:
+        cfg = _config_for(_store(interaction), interaction.guild_id)
         await interaction.response.send_modal(CooldownModal(cfg.cooldown_secs))
 
-    @discord.ui.button(
-        label="Edit Perks",
-        style=discord.ButtonStyle.primary,
-        emoji="📝",
-        custom_id="config:perks",
-        row=2,
-    )
-    async def edit_perks(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+    async def on_perks(self, interaction: discord.Interaction) -> None:
+        cfg = _config_for(_store(interaction), interaction.guild_id)
         await interaction.response.send_modal(PerksModal(cfg.perks_text))
 
 
@@ -352,7 +305,7 @@ class CooldownModal(discord.ui.Modal, title="Set Awakener Cooldown"):
         cfg = _config_for(store, interaction.guild_id)
         cfg.cooldown_secs = secs
         await store.persist_config(cfg)
-        await interaction.response.edit_message(embed=build_config_embed(cfg))
+        await interaction.response.edit_message(view=ConfigView(cfg))
 
 
 class PerksModal(discord.ui.Modal, title="Edit Awakener Perks"):
@@ -375,4 +328,4 @@ class PerksModal(discord.ui.Modal, title="Edit Awakener Perks"):
             line.strip() for line in str(self.perks).splitlines() if line.strip()
         )
         await store.persist_config(cfg)
-        await interaction.response.edit_message(embed=build_config_embed(cfg))
+        await interaction.response.edit_message(view=ConfigView(cfg))

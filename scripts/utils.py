@@ -13,7 +13,9 @@ class ConfigStore(Protocol):
     configs: dict[int, GuildConfig]
     states: dict[int, GuildState]
 
-    def persist_config(self, config: GuildConfig) -> Coroutine[object, object, None]: ...
+    def persist_config(
+        self, config: GuildConfig
+    ) -> Coroutine[object, object, None]: ...
 
     def persist_state(self, state: GuildState) -> Coroutine[object, object, None]: ...
 
