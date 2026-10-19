@@ -1,4 +1,3 @@
-
 import os
 import discord
 
@@ -12,36 +11,59 @@ MESSAGE_COOLDOWN = 5
 last_message_timestamp = None
 last_message_author_id = 818428347151024199
 
+
 class AwakenerView(discord.ui.LayoutView):
-    def __init__(
-        self,
-        author: discord.Member | None = None,
-        role: discord.Role | None = None,
-    ):
+    def __init__(self, author: discord.Member | None = None, role: discord.Role | None = None):
         super().__init__(timeout=None)
 
-        message = (
-            f"### The chat was revived by {author.mention} and the {role.name} role was claimed!"
-            if author is not None and role is not None
-            else "### The chat was revived!"
+        info_button = discord.ui.Button(
+            label="Info",
+            style=discord.ButtonStyle.secondary,
+            custom_id="awakener:info",
         )
+        info_button.callback = self.show_info
 
-        button = discord.ui.Button(
-            label="Say hi",
+        perks_button = discord.ui.Button(
+            label="Perks",
             style=discord.ButtonStyle.primary,
-            custom_id="awakener:say_hi",
+            custom_id="awakener:perks",
         )
-        button.callback = self.say_hi
+        perks_button.callback = self.show_perks
+
+        delete_button = discord.ui.Button(
+            label="Delete",
+            style=discord.ButtonStyle.danger,
+            custom_id="awakener:delete",
+        )
+        delete_button.callback = self.delete_message
+
+        text = (
+            f"### The chat was revived by {author.mention} and the {role.mention} role was claimed!"
+            if author is not None and role is not None
+            else "### Awakener"
+        )
 
         self.add_item(
             discord.ui.Container(
-                discord.ui.TextDisplay(message),
-                discord.ui.ActionRow(button),
+                discord.ui.TextDisplay(text),
+                discord.ui.ActionRow(info_button, perks_button, delete_button),
             )
         )
 
-    async def say_hi(self, interaction: discord.Interaction):
-        await interaction.response.send_message("hi", ephemeral=True)
+    async def show_info(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "This message revives the chat and assigns the Awakener role.",
+            ephemeral=True,
+        )
+
+    async def show_perks(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "The Awakener role gives access to its configured perks.",
+            ephemeral=True,
+        )
+
+    async def delete_message(self, interaction: discord.Interaction):
+        await interaction.message.delete()
 
 
 @client.event
@@ -101,6 +123,7 @@ async def on_message(message: discord.Message):
                         view=AwakenerView(message.author, role),
                         reference=message,
                         mention_author=False,
+                        silent=True
                     )
                 except (discord.Forbidden, discord.HTTPException):
                     pass
