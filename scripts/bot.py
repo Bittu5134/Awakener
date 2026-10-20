@@ -35,6 +35,7 @@ async def config_command(interaction: discord.Interaction) -> None:
     )
     await interaction.response.send_message(view=ConfigView(cfg), ephemeral=True)
 
+
 @bot.event
 async def setup_hook():
     utils.db_conn = await db.open_db(config.DB_PATH)
@@ -88,7 +89,7 @@ async def on_message(message: discord.Message):
     role = message.guild.get_role(cfg.role_id)
     if not role or utils.role_problem(message.guild, role):
         return
-    
+
     # Delete the previous claim message if it exists
     if state.last_claim_msg_id:
         try:
