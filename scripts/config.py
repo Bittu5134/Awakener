@@ -23,7 +23,7 @@ MAX_COOLDOWN_SECS = MAX_COOLDOWN_MINS * 60
 # DEFAULT_COOLDOWN_SECS = 5
 DEFAULT_COOLDOWN_SECS = 10
 
-DEFAULT_PERKS_MESSAGE = "No perks have been configured by the admins yet."
+DEFAULT_PERKS_MESSAGE = "Use `/config` to add more perks here!"
 PERKS_MAX_LENGTH = 1800
 
 

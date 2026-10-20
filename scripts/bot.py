@@ -7,6 +7,7 @@ from . import config, db, utils
 from .ui import (
     AwakenerStatusView,
     ConfigView,
+    InfoView,
 )
 
 log = logging.getLogger(__name__)
@@ -71,46 +72,54 @@ async def on_message(message: discord.Message):
     state = utils.get_state(message.guild.id)
     now = discord.utils.utcnow()
 
+    # Same holder speaking again
+    if state.current_holder_id == message.author.id:
+        state.last_message_ts = now
+        await db.save_state(utils.db_conn, state)
+        return
+
+    # awaken.
     previous_ts = state.last_message_ts
     state.last_message_ts = now
-    await db.save_state(utils.db_conn, state)
 
-    # Delete the previous claim message if chat has resumed
+    if not previous_ts or (now - previous_ts).total_seconds() < cfg.cooldown_secs:
+        await db.save_state(utils.db_conn, state)
+        return
+
+    role = message.guild.get_role(cfg.role_id)
+    if not role or utils.role_problem(message.guild, role):
+        await db.save_state(utils.db_conn, state)
+        return
+
+    # Hand off the role
+    if state.current_holder_id:
+        try:
+            prev = message.guild.get_member(
+                state.current_holder_id
+            ) or await message.guild.fetch_member(state.current_holder_id)
+            if prev and role in prev.roles:
+                try:
+                    await prev.remove_roles(role, reason="Awakened by someone else")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        await message.author.add_roles(role, reason="Revived a silent chat")
+    except Exception:
+        await db.save_state(utils.db_conn, state)
+        return
+
+    state.current_holder_id = message.author.id
+
+    # Delete the previous claim message, then send a fresh one
     if state.last_claim_msg_id:
         try:
             msg = await message.channel.fetch_message(state.last_claim_msg_id)
             await msg.delete()
         except Exception:
             pass
-        state.last_claim_msg_id = None
-        await db.save_state(utils.db_conn, state)
-
-    if not previous_ts or (now - previous_ts).total_seconds() < cfg.cooldown_secs:
-        return
-    if message.author.id == state.current_holder_id:
-        return
-
-    role = message.guild.get_role(cfg.role_id)
-    if not role or utils.role_problem(message.guild, role):
-        return
-
-    # Remove role from previous holder and add it to the new holder
-    if state.current_holder_id:
-        prev = message.guild.get_member(
-            state.current_holder_id
-        ) or await message.guild.fetch_member(state.current_holder_id)
-        if prev and role in prev.roles:
-            try:
-                await prev.remove_roles(role, reason="Managed by Awakener bot")
-            except Exception:
-                pass
-
-    try:
-        await message.author.add_roles(role, reason="Managed by Awakener bot")
-    except Exception:
-        return
-
-    state.current_holder_id = message.author.id
 
     try:
         claim_msg = await message.channel.send(

@@ -1,9 +1,12 @@
-"""Components V2 panels, persistent views, and the /config panel."""
-
+import re
 import discord
+
 
 from . import config, db, utils
 from .db import GuildConfig
+
+CHANNEL_REF_RE = re.compile(r"#([\w\-]+)")
+ROLE_REF_RE = re.compile(r"@([\w\-]+)")
 
 COLOUR = discord.Colour.dark_gold()
 
@@ -16,6 +19,28 @@ COOLDOWN_VALIDATION_MSG = (
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+
+def _resolve_channel_refs(text: str, guild: discord.Guild) -> str:
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1).lower()
+        channel = discord.utils.find(lambda c: c.name.lower() == name, guild.channels)
+        return f"<#{channel.id}>" if channel else match.group(0)
+
+    return CHANNEL_REF_RE.sub(replace, text)
+
+
+def _resolve_role_refs(text: str, guild: discord.Guild) -> str:
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1).lower()
+        role = discord.utils.find(
+            lambda r: r.name.lower() == name and not r.is_default(), guild.roles
+        )
+        return f"<@&{role.id}>" if role else match.group(0)
+
+    return ROLE_REF_RE.sub(replace, text)
 
 
 def _parse_cooldown(raw: str) -> int | None:
@@ -92,7 +117,7 @@ class AwakenerStatusView(discord.ui.LayoutView):
             discord.ui.Container(
                 discord.ui.Section(
                     discord.ui.TextDisplay(text),
-                    accessory=_button("Info", "awakener:info", self.show_info, "ℹ️"),
+                    accessory=_button("Read More...", "awakener:info", self.show_info),
                 ),
                 accent_colour=COLOUR,
             )
@@ -113,8 +138,9 @@ class InfoView(discord.ui.LayoutView):
         super().__init__(timeout=None)
 
         cooldown = config.format_cooldown(cfg.cooldown_secs)
+        channel = f"<#{cfg.channel_id}>" if cfg.channel_id else "the configured channel"
         perks = (
-            "\n".join(f"• {perk}" for perk in cfg.perks)
+            "\n".join(f"- {perk}" for perk in cfg.perks)
             if cfg.perks
             else config.DEFAULT_PERKS_MESSAGE
         )
@@ -122,19 +148,21 @@ class InfoView(discord.ui.LayoutView):
         items: list[discord.ui.Item] = [
             discord.ui.TextDisplay("### The Awakener"),
             discord.ui.TextDisplay(
-                f"Silence for **{cooldown}** and the next message claims the role. "
-                "The previous holder loses it."
+                f"If {channel} stays quiet for **{cooldown}**, the first person to "
+                "revive it gains the role.\n"
+                "If the chat goes quiet again, you lose it. Only one person can hold the role at a time."
             ),
             discord.ui.Separator(),
-            discord.ui.TextDisplay("**Perks**"),
-            discord.ui.TextDisplay(perks),
+            discord.ui.TextDisplay(
+                f"**Perks:**\n- Earn the <@&{cfg.role_id}> role.\n{perks}"
+            ),
         ]
 
         links = _link_buttons()
         if links:
-            items += [discord.ui.Separator(), discord.ui.ActionRow(*links)]
+            items.append(discord.ui.ActionRow(*links))
 
-        items.append(discord.ui.TextDisplay("-# /awakener"))
+        items.append(discord.ui.TextDisplay("-# /awaken • /config"))
 
         self.add_item(discord.ui.Container(*items, accent_colour=COLOUR))
 
@@ -170,8 +198,14 @@ class ConfigView(discord.ui.LayoutView):
                 discord.ui.Separator(),
                 discord.ui.TextDisplay(f"**Channel**\n{channel}"),
                 discord.ui.ActionRow(self.channel_select),
+                discord.ui.TextDisplay(
+                    "-# 🛈 The only channel where chat activity is tracked."
+                ),
                 discord.ui.TextDisplay(f"**Role**\n{role}"),
                 discord.ui.ActionRow(self.role_select),
+                discord.ui.TextDisplay(
+                    "-# 🛈 The role given to whoever revives the chat."
+                ),
                 discord.ui.Separator(),
                 discord.ui.Section(
                     discord.ui.TextDisplay(
@@ -181,9 +215,15 @@ class ConfigView(discord.ui.LayoutView):
                         "Edit", "config:cooldown", self.on_cooldown, "⏱️"
                     ),
                 ),
+                discord.ui.TextDisplay(
+                    "-# 🛈 How long the chat must stay silent before it counts as dead."
+                ),
                 discord.ui.Section(
                     discord.ui.TextDisplay(f"**Perks**\n{_perks_summary(cfg)}"),
                     accessory=_button("Edit", "config:perks", self.on_perks, "📝"),
+                ),
+                discord.ui.TextDisplay(
+                    "-# 🛈 The perks shown to whoever holds the role."
                 ),
                 accent_colour=COLOUR,
             )
@@ -261,7 +301,7 @@ class PerksModal(discord.ui.Modal, title="Perks"):
     perks = discord.ui.TextInput(
         label="One perk per line",
         style=discord.TextStyle.paragraph,
-        placeholder="Priority in #general\nAccess to the lounge channel",
+        placeholder="Priority in #general\nAccess to @Awakener",
         max_length=config.PERKS_MAX_LENGTH,
         required=False,
     )
@@ -275,8 +315,14 @@ class PerksModal(discord.ui.Modal, title="Perks"):
             return
 
         cfg = utils.get_config(interaction.guild_id)
+        raw = str(self.perks)
+
+        if interaction.guild:
+            raw = _resolve_channel_refs(raw, interaction.guild)
+            raw = _resolve_role_refs(raw, interaction.guild)
+
         cfg.perks_text = "\n".join(
-            line.strip() for line in str(self.perks).splitlines() if line.strip()
+            line.strip() for line in raw.splitlines() if line.strip()
         )
         await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))
