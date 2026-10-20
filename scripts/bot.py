@@ -22,16 +22,14 @@ tree = app_commands.CommandTree(bot)
 @app_commands.guild_only()
 async def awaken_command(interaction: discord.Interaction) -> None:
     text = utils.get_status_text(interaction.guild)
-    await interaction.response.send_message(content=text, view=AwakenerStatusView())
+    await interaction.response.send_message(view=AwakenerStatusView(text))
 
 
 @tree.command(name="config", description="Configure the Awakener bot")
 @app_commands.guild_only()
 @app_commands.default_permissions(manage_guild=True)
 async def config_command(interaction: discord.Interaction) -> None:
-    cfg = utils.configs.get(interaction.guild_id) or db.GuildConfig(
-        guild_id=interaction.guild_id
-    )
+    cfg = utils.get_config(interaction.guild_id)
     await interaction.response.send_message(view=ConfigView(cfg), ephemeral=True)
 
 
@@ -43,7 +41,6 @@ async def setup_hook():
 
     bot.add_view(AwakenerStatusView())
     bot.add_view(InfoView())
-    bot.add_view(ConfigView())
 
     if config.GUILD_ID:
         guild = discord.Object(id=config.GUILD_ID)
@@ -73,9 +70,7 @@ async def on_message(message: discord.Message):
     ):
         return
 
-    state = utils.states.setdefault(
-        message.guild.id, db.GuildState(guild_id=message.guild.id)
-    )
+    state = utils.get_state(message.guild.id)
     now = discord.utils.utcnow()
     previous_ts = state.last_message_ts
 
@@ -120,8 +115,9 @@ async def on_message(message: discord.Message):
 
     try:
         claim_msg = await message.channel.send(
-            content=f"{role.mention} has been claimed by {message.author.mention}!",
-            view=AwakenerStatusView(),
+            view=AwakenerStatusView(
+                text=f"{role.mention} has been claimed by {message.author.mention}!"
+            ),
             reference=message,
             mention_author=False,
             silent=True,
