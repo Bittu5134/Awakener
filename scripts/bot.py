@@ -8,7 +8,6 @@ from .ui import (
     AwakenerStatusView,
     ConfigView,
     InfoView,
-    PerksView,
 )
 
 log = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ async def setup_hook():
 
     bot.add_view(AwakenerStatusView())
     bot.add_view(InfoView())
-    bot.add_view(PerksView())
     bot.add_view(ConfigView())
 
     if config.GUILD_ID:
