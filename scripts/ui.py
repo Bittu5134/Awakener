@@ -2,7 +2,7 @@ import re
 import discord
 
 
-from . import config, db, utils
+from . import config, db, utils, leaderboard_db
 from .db import GuildConfig
 
 CHANNEL_REF_RE = re.compile(r"#([\w\-]+)")
@@ -105,6 +105,17 @@ def _perks_summary(cfg: GuildConfig) -> str:
     return f"{count} set" if count else "none"
 
 
+def _entries_text(rows: list[tuple[int, int]], medals: bool = True) -> str:
+    """One line per leaderboard entry; medals for top 3 when medals=True."""
+    if not rows:
+        return "Nobody has awakened the chat yet."
+    lines = []
+    for index, (user_id, count) in enumerate(rows):
+        prefix = ("🥇", "🥈", "🥉")[index] if medals and index < 3 else "•"
+        lines.append(f"{prefix} <@{user_id}> — {count} awakening{'s' if count != 1 else ''}")
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- #
 # Public claim / status message
 # --------------------------------------------------------------------------- #
@@ -125,7 +136,26 @@ class AwakenerStatusView(discord.ui.LayoutView):
 
     async def show_info(self, interaction: discord.Interaction) -> None:
         cfg = utils.get_config(interaction.guild_id)
-        await interaction.response.send_message(view=InfoView(cfg), ephemeral=True)
+        top_rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 3)
+        await interaction.response.send_message(view=InfoView(cfg, top_rows), ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+# Leaderboard (public card)
+# --------------------------------------------------------------------------- #
+
+
+class LeaderboardView(discord.ui.LayoutView):
+    def __init__(self, rows: list[tuple[int, int]]) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("### Top Awakeners"),
+                discord.ui.TextDisplay(_entries_text(rows)),
+                discord.ui.TextDisplay("-# /leaderboard"),
+                accent_colour=COLOUR,
+            )
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -134,7 +164,7 @@ class AwakenerStatusView(discord.ui.LayoutView):
 
 
 class InfoView(discord.ui.LayoutView):
-    def __init__(self, cfg: GuildConfig) -> None:
+    def __init__(self, cfg: GuildConfig, top_rows: list[tuple[int, int]]) -> None:
         super().__init__(timeout=None)
 
         cooldown = config.format_cooldown(cfg.cooldown_secs)
@@ -146,12 +176,16 @@ class InfoView(discord.ui.LayoutView):
         )
 
         items: list[discord.ui.Item] = [
-            discord.ui.TextDisplay("### The Awakener"),
+            discord.ui.TextDisplay("### How to play"),
             discord.ui.TextDisplay(
                 f"If {channel} stays quiet for **{cooldown}**, the first person to "
                 "revive it gains the role.\n"
                 "If the chat goes quiet again, you lose it. Only one person can hold the role at a time."
             ),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay("**Top Awakeners**"),
+            discord.ui.TextDisplay(_entries_text(top_rows)),
+            discord.ui.ActionRow(_button("See More..", "info:leaderboard", self.show_leaderboard)),
             discord.ui.Separator(),
             discord.ui.TextDisplay(
                 f"**Perks:**\n- Earn the <@&{cfg.role_id}> role.\n{perks}"
@@ -162,9 +196,14 @@ class InfoView(discord.ui.LayoutView):
         if links:
             items.append(discord.ui.ActionRow(*links))
 
-        items.append(discord.ui.TextDisplay("-# /awaken • /config"))
+        # items.append(discord.ui.ActionRow(_button("Leaderboard", "info:leaderboard", self.show_leaderboard)))
+        items.append(discord.ui.TextDisplay("-# /awaken • /leaderboard • /config"))
 
         self.add_item(discord.ui.Container(*items, accent_colour=COLOUR))
+
+    async def show_leaderboard(self, interaction: discord.Interaction) -> None:
+        rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
+        await interaction.response.send_message(view=LeaderboardView(rows))
 
 
 # --------------------------------------------------------------------------- #
@@ -225,6 +264,18 @@ class ConfigView(discord.ui.LayoutView):
                 discord.ui.TextDisplay(
                     "-# 🛈 The perks shown to whoever holds the role."
                 ),
+                discord.ui.Separator(),
+                discord.ui.Section(
+                    discord.ui.TextDisplay("**Leaderboard**\nMaintenance for awakening counts."),
+                    accessory=_button("Purge", "config:purge", self.on_purge, "🧹"),
+                ),
+                discord.ui.Section(
+                    discord.ui.TextDisplay("-# Removes entries for members no longer in the server."),
+                    accessory=_button("Reset", "config:reset", self.on_reset, "⚠️"),
+                ),
+                discord.ui.TextDisplay(
+                    "-# 🛈 Reset wipes all awakening counts for this server."
+                ),
                 accent_colour=COLOUR,
             )
         )
@@ -267,6 +318,108 @@ class ConfigView(discord.ui.LayoutView):
 
         cfg = utils.get_config(interaction.guild_id)
         await interaction.response.send_modal(PerksModal(cfg.perks_text))
+
+    async def on_purge(self, interaction: discord.Interaction) -> None:
+        if await _deny_non_admin(interaction):
+            return
+        await interaction.response.send_message(
+            view=PurgeConfirmView(), ephemeral=True
+        )
+
+    async def on_reset(self, interaction: discord.Interaction) -> None:
+        if await _deny_non_admin(interaction):
+            return
+        await interaction.response.send_message(
+            view=ResetConfirmView(), ephemeral=True
+        )
+
+
+class PurgeConfirmView(discord.ui.LayoutView):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        confirm = _button("Confirm", "purge:confirm", self.do_purge)
+        confirm.style = discord.ButtonStyle.success
+        cancel = _button("Cancel", "purge:cancel", self.cancel)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(
+                    "This will remove leaderboard entries for members no longer in the server. Continue?"
+                ),
+                discord.ui.ActionRow(confirm, cancel),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def do_purge(self, interaction: discord.Interaction) -> None:
+        if await _deny_non_admin(interaction):
+            return
+        present = [member.id for member in interaction.guild.members]
+        rows = await leaderboard_db.all_rows(utils.lb_conn, interaction.guild_id)
+        await leaderboard_db.purge_missing(utils.lb_conn, interaction.guild_id, present)
+        removed = sum(1 for user_id in rows if user_id not in present)
+        await interaction.response.edit_message(view=PurgeResultView(removed))
+
+    async def cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(view=CancelledResultView())
+
+
+class PurgeResultView(discord.ui.LayoutView):
+    def __init__(self, removed: int) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(f"✅ Purged {removed} gone member entries."),
+                accent_colour=COLOUR,
+            )
+        )
+
+
+class ResetConfirmView(discord.ui.LayoutView):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        confirm = _button("Confirm", "reset:confirm", self.do_reset)
+        confirm.style = discord.ButtonStyle.success
+        cancel = _button("Cancel", "reset:cancel", self.cancel)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(
+                    "This will wipe all awakening counts for this server. Continue?"
+                ),
+                discord.ui.ActionRow(confirm, cancel),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def do_reset(self, interaction: discord.Interaction) -> None:
+        if await _deny_non_admin(interaction):
+            return
+        await leaderboard_db.reset_guild(utils.lb_conn, interaction.guild_id)
+        await interaction.response.edit_message(view=ResetResultView())
+
+    async def cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(view=CancelledResultView())
+
+
+class ResetResultView(discord.ui.LayoutView):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("✅ Leaderboard reset."),
+                accent_colour=COLOUR,
+            )
+        )
+
+
+class CancelledResultView(discord.ui.LayoutView):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("Cancelled."),
+                accent_colour=COLOUR,
+            )
+        )
 
 
 class CooldownModal(discord.ui.Modal, title="Cooldown"):

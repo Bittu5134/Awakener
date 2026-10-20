@@ -5,6 +5,7 @@ from .db import GuildConfig, GuildState
 configs: dict[int, GuildConfig] = {}
 states: dict[int, GuildState] = {}
 db_conn = None
+lb_conn = None
 
 
 def get_config(guild_id: int) -> GuildConfig:

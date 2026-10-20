@@ -3,11 +3,11 @@ import logging
 import discord
 from discord import app_commands
 
-from . import config, db, utils
+from . import config, db, utils, leaderboard_db
 from .ui import (
     AwakenerStatusView,
     ConfigView,
-    InfoView,
+    LeaderboardView,
 )
 
 log = logging.getLogger(__name__)
@@ -33,9 +33,17 @@ async def config_command(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(view=ConfigView(cfg), ephemeral=True)
 
 
+@tree.command(name="leaderboard", description="Show the top awakeners of this server")
+@app_commands.guild_only()
+async def leaderboard_command(interaction: discord.Interaction) -> None:
+    rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
+    await interaction.response.send_message(view=LeaderboardView(rows))
+
+
 @bot.event
 async def setup_hook():
     utils.db_conn = await db.open_db(config.DB_PATH)
+    utils.lb_conn = await leaderboard_db.open_lb(config.LEADERBOARD_DB_PATH)
     utils.configs = await db.load_configs(utils.db_conn)
     utils.states = await db.load_states(utils.db_conn)
 
@@ -110,6 +118,8 @@ async def on_message(message: discord.Message):
     except Exception:
         await db.save_state(utils.db_conn, state)
         return
+
+    await leaderboard_db.increment(utils.lb_conn, message.guild.id, message.author.id)
 
     state.current_holder_id = message.author.id
 

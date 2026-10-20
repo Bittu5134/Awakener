@@ -14,6 +14,7 @@ GUILD_ID = os.getenv("GUILD_ID")
 GUILD_ID = int(GUILD_ID) if GUILD_ID else None
 
 DB_PATH = Path(os.getenv("DB_PATH", "awakener.db"))
+LEADERBOARD_DB_PATH = DB_PATH.with_name("leaderboard.db")
 
 # Cooldown limits:
 MIN_COOLDOWN_MINS = 5
