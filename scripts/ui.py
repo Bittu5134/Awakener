@@ -112,7 +112,9 @@ def _entries_text(rows: list[tuple[int, int]], medals: bool = True) -> str:
     lines = []
     for index, (user_id, count) in enumerate(rows):
         prefix = ("🥇", "🥈", "🥉")[index] if medals and index < 3 else "•"
-        lines.append(f"{prefix} <@{user_id}> — {count} awakening{'s' if count != 1 else ''}")
+        lines.append(
+            f"{prefix} <@{user_id}> — {count} awakening{'s' if count != 1 else ''}"
+        )
     return "\n".join(lines)
 
 
@@ -137,7 +139,9 @@ class AwakenerStatusView(discord.ui.LayoutView):
     async def show_info(self, interaction: discord.Interaction) -> None:
         cfg = utils.get_config(interaction.guild_id)
         top_rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 3)
-        await interaction.response.send_message(view=InfoView(cfg, top_rows), ephemeral=True)
+        await interaction.response.send_message(
+            view=InfoView(cfg, top_rows), ephemeral=True
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -169,6 +173,7 @@ class InfoView(discord.ui.LayoutView):
 
         cooldown = config.format_cooldown(cfg.cooldown_secs)
         channel = f"<#{cfg.channel_id}>" if cfg.channel_id else "the configured channel"
+        role_line = f"- Earn the <@&{cfg.role_id}> role.\n" if cfg.role_id else ""
         perks = (
             "\n".join(f"- {perk}" for perk in cfg.perks)
             if cfg.perks
@@ -185,18 +190,17 @@ class InfoView(discord.ui.LayoutView):
             discord.ui.Separator(),
             discord.ui.TextDisplay("**Top Awakeners**"),
             discord.ui.TextDisplay(_entries_text(top_rows)),
-            discord.ui.ActionRow(_button("See More..", "info:leaderboard", self.show_leaderboard)),
-            discord.ui.Separator(),
-            discord.ui.TextDisplay(
-                f"**Perks:**\n- Earn the <@&{cfg.role_id}> role.\n{perks}"
+            discord.ui.ActionRow(
+                _button("More", "info:leaderboard", self.show_leaderboard)
             ),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay(f"**Perks:**\n{role_line}{perks}"),
         ]
 
         links = _link_buttons()
         if links:
             items.append(discord.ui.ActionRow(*links))
 
-        # items.append(discord.ui.ActionRow(_button("Leaderboard", "info:leaderboard", self.show_leaderboard)))
         items.append(discord.ui.TextDisplay("-# /awaken • /leaderboard • /config"))
 
         self.add_item(discord.ui.Container(*items, accent_colour=COLOUR))
@@ -265,16 +269,16 @@ class ConfigView(discord.ui.LayoutView):
                     "-# 🛈 The perks shown to whoever holds the role."
                 ),
                 discord.ui.Separator(),
-                discord.ui.Section(
-                    discord.ui.TextDisplay("**Leaderboard**\nMaintenance for awakening counts."),
-                    accessory=_button("Purge", "config:purge", self.on_purge, "🧹"),
+                discord.ui.TextDisplay(
+                    "**Leaderboard**\nMaintenance for awakening counts."
                 ),
-                discord.ui.Section(
-                    discord.ui.TextDisplay("-# Removes entries for members no longer in the server."),
-                    accessory=_button("Reset", "config:reset", self.on_reset, "⚠️"),
+                discord.ui.ActionRow(
+                    _button("Purge", "config:purge", self.on_purge, "🧹"),
+                    _button("Reset", "config:reset", self.on_reset, "⚠️"),
                 ),
                 discord.ui.TextDisplay(
-                    "-# 🛈 Reset wipes all awakening counts for this server."
+                    "-# - Purge removes entries for members no longer in the server.\n"
+                    "-# - Reset wipes all awakening counts for this server."
                 ),
                 accent_colour=COLOUR,
             )
@@ -322,16 +326,12 @@ class ConfigView(discord.ui.LayoutView):
     async def on_purge(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
-        await interaction.response.send_message(
-            view=PurgeConfirmView(), ephemeral=True
-        )
+        await interaction.response.send_message(view=PurgeConfirmView(), ephemeral=True)
 
     async def on_reset(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
-        await interaction.response.send_message(
-            view=ResetConfirmView(), ephemeral=True
-        )
+        await interaction.response.send_message(view=ResetConfirmView(), ephemeral=True)
 
 
 class PurgeConfirmView(discord.ui.LayoutView):

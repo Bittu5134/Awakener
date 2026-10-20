@@ -86,7 +86,7 @@ async def on_message(message: discord.Message):
         await db.save_state(utils.db_conn, state)
         return
 
-    # awaken.
+    # A different person speaking after silence: this message awakens.
     previous_ts = state.last_message_ts
     state.last_message_ts = now
 

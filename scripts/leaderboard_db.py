@@ -38,7 +38,9 @@ async def increment(db: aiosqlite.Connection, guild_id: int, user_id: int) -> No
     await db.commit()
 
 
-async def top(db: aiosqlite.Connection, guild_id: int, limit: int) -> list[tuple[int, int]]:
+async def top(
+    db: aiosqlite.Connection, guild_id: int, limit: int
+) -> list[tuple[int, int]]:
     rows = await db.execute_fetchall(
         """
         SELECT user_id, count FROM awaken_counts
@@ -58,7 +60,9 @@ async def all_rows(db: aiosqlite.Connection, guild_id: int) -> list[int]:
     return [row["user_id"] for row in rows]
 
 
-async def purge_missing(db: aiosqlite.Connection, guild_id: int, present_ids: list[int]) -> None:
+async def purge_missing(
+    db: aiosqlite.Connection, guild_id: int, present_ids: list[int]
+) -> None:
     if not present_ids:
         await db.execute("DELETE FROM awaken_counts WHERE guild_id = ?", (guild_id,))
     else:
