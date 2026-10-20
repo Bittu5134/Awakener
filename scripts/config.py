@@ -21,10 +21,11 @@ MAX_COOLDOWN_MINS = 360
 MIN_COOLDOWN_SECS = MIN_COOLDOWN_MINS * 60
 MAX_COOLDOWN_SECS = MAX_COOLDOWN_MINS * 60
 # DEFAULT_COOLDOWN_SECS = 5
-DEFAULT_COOLDOWN_SECS = 10 
+DEFAULT_COOLDOWN_SECS = 10
 
 DEFAULT_PERKS_MESSAGE = "No perks have been configured by the admins yet."
 PERKS_MAX_LENGTH = 1800
+
 
 def format_cooldown(seconds: int) -> str:
     """Human-readable cooldown, minute-granular when possible."""
