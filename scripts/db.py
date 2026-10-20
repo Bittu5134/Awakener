@@ -1,8 +1,3 @@
-"""SQLite persistence: schema, migration, and CRUD helpers.
-
-Cooldown is stored in seconds internally; admins configure it in minutes.
-"""
-
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -69,47 +64,7 @@ async def open_db(path) -> aiosqlite.Connection:
     await db.execute("PRAGMA journal_mode=WAL")
     await db.executescript(SCHEMA)
     await db.commit()
-    await _migrate_cooldown_seconds(db)
-    await _migrate_claim_msg_id(db)
     return db
-
-
-async def _migrate_claim_msg_id(db: aiosqlite.Connection) -> None:
-    columns = await _table_columns(db, "guild_state")
-    if "last_claim_msg_id" not in columns:
-        await db.execute("ALTER TABLE guild_state ADD COLUMN last_claim_msg_id INTEGER")
-        await db.commit()
-
-
-async def _migrate_cooldown_seconds(db: aiosqlite.Connection) -> None:
-    """Convert legacy cooldown_mins (minutes) to cooldown_secs (seconds)."""
-    columns = await _table_columns(db, "guild_config")
-    if "cooldown_secs" in columns or "cooldown_mins" not in columns:
-        return
-
-    log.info("Migrating guild_config from cooldown_mins to cooldown_secs...")
-    await db.executescript("""
-        ALTER TABLE guild_config RENAME TO guild_config_legacy;
-        CREATE TABLE guild_config (
-            guild_id      INTEGER PRIMARY KEY,
-            channel_id    INTEGER,
-            role_id       INTEGER,
-            cooldown_secs INTEGER NOT NULL DEFAULT 3600,
-            perks_text    TEXT    NOT NULL DEFAULT ''
-        );
-        INSERT INTO guild_config
-            (guild_id, channel_id, role_id, cooldown_secs, perks_text)
-        SELECT guild_id, channel_id, role_id, cooldown_mins * 60, perks_text
-        FROM guild_config_legacy;
-        DROP TABLE guild_config_legacy;
-        """)
-    await db.commit()
-    log.info("Migration complete.")
-
-
-async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
-    rows = await db.execute_fetchall(f"PRAGMA table_info({table})")
-    return {row["name"] for row in rows}
 
 
 def _row_to_config(row: aiosqlite.Row) -> GuildConfig:
