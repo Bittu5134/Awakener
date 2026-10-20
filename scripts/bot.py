@@ -19,9 +19,9 @@ bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
 
-@tree.command(name="awakener", description="Show who currently holds the Awakener role")
+@tree.command(name="awaken", description="Show who currently holds the Awakener role")
 @app_commands.guild_only()
-async def awakener_command(interaction: discord.Interaction) -> None:
+async def awaken_command(interaction: discord.Interaction) -> None:
     text = utils.get_status_text(interaction.guild)
     await interaction.response.send_message(content=text, view=AwakenerStatusView())
 
