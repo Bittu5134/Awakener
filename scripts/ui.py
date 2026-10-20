@@ -1,11 +1,9 @@
-"""Components V2 panels, persistent views, and the /config panel."""
-
 import discord
 
 from . import config, db, utils
 from .db import GuildConfig, GuildState
 
-COLOUR = discord.Colour.gold()
+COLOUR = discord.Colour.dark_gold()
 
 
 def _parse_cooldown(raw: str) -> int | None:
@@ -60,10 +58,6 @@ def _link_buttons() -> list[discord.ui.Button]:
     return buttons
 
 
-def _cfg(guild_id: int | None) -> GuildConfig:
-    return utils.configs.get(guild_id) or GuildConfig(guild_id=guild_id or 0)
-
-
 class AwakenerStatusView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
@@ -71,14 +65,12 @@ class AwakenerStatusView(discord.ui.View):
         self.add_item(_nav_button("Perks", "🎁", "awakener:perks", self.show_perks))
 
     async def show_info(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(
-            view=InfoView(_cfg(interaction.guild_id)), ephemeral=True
-        )
+        cfg = utils.get_config(interaction.guild_id)
+        await interaction.response.send_message(view=InfoView(cfg), ephemeral=True)
 
     async def show_perks(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(
-            view=PerksView(_cfg(interaction.guild_id)), ephemeral=True
-        )
+        cfg = utils.get_config(interaction.guild_id)
+        await interaction.response.send_message(view=PerksView(cfg), ephemeral=True)
 
 
 class InfoView(discord.ui.LayoutView):
@@ -107,9 +99,8 @@ class InfoView(discord.ui.LayoutView):
         )
 
     async def go_perks(self, interaction: discord.Interaction) -> None:
-        await interaction.response.edit_message(
-            view=PerksView(_cfg(interaction.guild_id))
-        )
+        cfg = utils.get_config(interaction.guild_id)
+        await interaction.response.edit_message(view=PerksView(cfg))
 
 
 class PerksView(discord.ui.LayoutView):
@@ -135,9 +126,8 @@ class PerksView(discord.ui.LayoutView):
         )
 
     async def go_info(self, interaction: discord.Interaction) -> None:
-        await interaction.response.edit_message(
-            view=InfoView(_cfg(interaction.guild_id))
-        )
+        cfg = utils.get_config(interaction.guild_id)
+        await interaction.response.edit_message(view=InfoView(cfg))
 
 
 class ConfigView(discord.ui.LayoutView):
@@ -145,61 +135,83 @@ class ConfigView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         cfg = cfg or GuildConfig(guild_id=0)
 
-        channel = f"<#{cfg.channel_id}>" if cfg.channel_id else "not set"
-        role = f"<@&{cfg.role_id}>" if cfg.role_id else "not set"
+        channel_display = (
+            f"<#{cfg.channel_id}>" if cfg.channel_id else "*None selected*"
+        )
+        role_display = f"<@&{cfg.role_id}>" if cfg.role_id else "*None selected*"
+        cooldown_display = config.format_cooldown(cfg.cooldown_secs)
+        perks_count = len(cfg.perks)
+        perks_display = f"{perks_count} configured" if perks_count else "*None*"
 
+        # Channel Selector
         self.channel_select = discord.ui.ChannelSelect(
             channel_types=[discord.ChannelType.text],
-            placeholder="Awakener channel",
+            placeholder="Select Awakener channel...",
             custom_id="config:channel",
         )
         self.channel_select.callback = self.on_channel
 
+        # Role Selector
         self.role_select = discord.ui.RoleSelect(
-            placeholder="Awakener role",
+            placeholder="Select Awakener role...",
             custom_id="config:role",
         )
         self.role_select.callback = self.on_role
 
+        # Action Buttons
         cooldown_btn = discord.ui.Button(
-            label="Cooldown",
+            label=f"Cooldown ({cooldown_display})",
             emoji="⏱️",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id="config:cooldown",
         )
         cooldown_btn.callback = self.on_cooldown
 
         perks_btn = discord.ui.Button(
-            label="Edit Perks",
+            label=f"Perks ({perks_display})",
             emoji="📝",
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id="config:perks",
         )
         perks_btn.callback = self.on_perks
 
         self.add_item(
             discord.ui.Container(
-                discord.ui.TextDisplay("### ⚙️ Awakener Config"),
+                discord.ui.TextDisplay("## ⚙️ Awakener Settings"),
                 discord.ui.TextDisplay(
-                    f"**Channel** {channel}\n"
-                    f"**Role** {role}\n"
-                    f"**Cooldown** {config.format_cooldown(cfg.cooldown_secs)}\n"
-                    f"**Perks** {len(cfg.perks) if cfg.perks else 'none'}"
+                    "-# Configure which channel to monitor, which role to grant, and chat revival timers."
                 ),
                 discord.ui.Separator(),
+                # Section 1: Channel
+                discord.ui.TextDisplay(f"**Channel** • Currently: {channel_display}"),
                 discord.ui.ActionRow(self.channel_select),
+                discord.ui.TextDisplay(
+                    "-# ℹ️ Chat silence will be tracked exclusively inside this channel."
+                ),
+                # Section 2: Role
+                discord.ui.TextDisplay(
+                    f"**Awakener Role** • Currently: {role_display}"
+                ),
                 discord.ui.ActionRow(self.role_select),
+                discord.ui.TextDisplay(
+                    "-# ℹ️ The bot gives this role to the revival user and removes it from the previous holder."
+                ),
+                # Section 3: Cooldown & Perks
+                discord.ui.TextDisplay("**Timer & Perks**"),
                 discord.ui.ActionRow(cooldown_btn, perks_btn),
+                discord.ui.TextDisplay(
+                    "-# ℹ️ Changes save live instantly to the database."
+                ),
                 accent_colour=COLOUR,
             )
         )
 
     async def on_channel(self, interaction: discord.Interaction) -> None:
-        cfg = _cfg(interaction.guild_id)
-        channel = self.channel_select.values[0]
+        cfg = utils.get_config(interaction.guild_id)
+        selected_channel = self.channel_select.values[0]
 
-        if cfg.channel_id != channel.id:
-            cfg.channel_id = channel.id
+        if cfg.channel_id != selected_channel.id:
+            cfg.channel_id = selected_channel.id
             await db.save_config(utils.db_conn, cfg)
             state = utils.states.setdefault(
                 cfg.guild_id, GuildState(guild_id=cfg.guild_id)
@@ -210,17 +222,17 @@ class ConfigView(discord.ui.LayoutView):
         await interaction.response.edit_message(view=ConfigView(cfg))
 
     async def on_role(self, interaction: discord.Interaction) -> None:
-        cfg = _cfg(interaction.guild_id)
+        cfg = utils.get_config(interaction.guild_id)
         cfg.role_id = self.role_select.values[0].id
         await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))
 
     async def on_cooldown(self, interaction: discord.Interaction) -> None:
-        cfg = _cfg(interaction.guild_id)
+        cfg = utils.get_config(interaction.guild_id)
         await interaction.response.send_modal(CooldownModal(cfg.cooldown_secs))
 
     async def on_perks(self, interaction: discord.Interaction) -> None:
-        cfg = _cfg(interaction.guild_id)
+        cfg = utils.get_config(interaction.guild_id)
         await interaction.response.send_modal(PerksModal(cfg.perks_text))
 
 
@@ -244,7 +256,7 @@ class CooldownModal(discord.ui.Modal, title="Set Awakener Cooldown"):
             )
             return
 
-        cfg = _cfg(interaction.guild_id)
+        cfg = utils.get_config(interaction.guild_id)
         cfg.cooldown_secs = secs
         await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))
@@ -264,7 +276,7 @@ class PerksModal(discord.ui.Modal, title="Edit Awakener Perks"):
         self.perks.default = current_perks or None
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        cfg = _cfg(interaction.guild_id)
+        cfg = utils.get_config(interaction.guild_id)
         cfg.perks_text = "\n".join(
             line.strip() for line in str(self.perks).splitlines() if line.strip()
         )

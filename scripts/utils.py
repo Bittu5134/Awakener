@@ -7,6 +7,13 @@ states: dict[int, GuildState] = {}
 db_conn = None
 
 
+def get_config(guild_id: int | None) -> GuildConfig:
+    gid = guild_id or 0
+    if gid not in configs:
+        configs[gid] = GuildConfig(guild_id=gid)
+    return configs[gid]
+
+
 def get_status_text(guild: discord.Guild) -> str:
     cfg = configs.get(guild.id)
     if not cfg or not cfg.role_id or not cfg.channel_id:
