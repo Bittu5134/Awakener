@@ -24,10 +24,9 @@ def _format_cooldown_input(secs: int) -> str:
     return str(secs // 60) if secs % 60 == 0 else f"{secs}s"
 
 
-def _nav_button(label: str, emoji: str, custom_id: str, callback) -> discord.ui.Button:
+def _nav_button(label: str, custom_id: str, callback) -> discord.ui.Button:
     btn = discord.ui.Button(
         label=label,
-        emoji=emoji,
         style=discord.ButtonStyle.secondary,
         custom_id=custom_id,
     )
@@ -61,17 +60,11 @@ def _link_buttons() -> list[discord.ui.Button]:
 class AwakenerStatusView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
-        self.add_item(_nav_button("Info", "ℹ️", "awakener:info", self.show_info))
-        self.add_item(_nav_button("Perks", "🎁", "awakener:perks", self.show_perks))
+        self.add_item(_nav_button("Info", "awakener:info", self.show_info))
 
     async def show_info(self, interaction: discord.Interaction) -> None:
         cfg = utils.get_config(interaction.guild_id)
         await interaction.response.send_message(view=InfoView(cfg), ephemeral=True)
-
-    async def show_perks(self, interaction: discord.Interaction) -> None:
-        cfg = utils.get_config(interaction.guild_id)
-        await interaction.response.send_message(view=PerksView(cfg), ephemeral=True)
-
 
 class InfoView(discord.ui.LayoutView):
     def __init__(self, cfg: GuildConfig | None = None) -> None:
@@ -79,55 +72,32 @@ class InfoView(discord.ui.LayoutView):
         cooldown = config.format_cooldown(cfg.cooldown_secs) if cfg else "not set"
         channel = f"<#{cfg.channel_id}>" if cfg and cfg.channel_id else "not set"
         role = f"<@&{cfg.role_id}>" if cfg and cfg.role_id else "not set"
-
-        self.add_item(
-            discord.ui.Container(
-                discord.ui.TextDisplay("### ℹ️ The Awakener"),
-                discord.ui.TextDisplay(
-                    f"**Timer:** the channel must be silent for **{cooldown}** before a message claims the role.\n"
-                    "**Rules:** the first to speak after silence claims it, and the previous holder loses it. "
-                    "Sending again while you hold it does nothing."
-                ),
-                discord.ui.Separator(),
-                discord.ui.TextDisplay(f"-# {channel} · {role}"),
-                discord.ui.ActionRow(
-                    _nav_button("Perks", "🎁", "awakener:info_to_perks", self.go_perks),
-                    *_link_buttons(),
-                ),
-                accent_colour=COLOUR,
-            )
-        )
-
-    async def go_perks(self, interaction: discord.Interaction) -> None:
-        cfg = utils.get_config(interaction.guild_id)
-        await interaction.response.edit_message(view=PerksView(cfg))
-
-
-class PerksView(discord.ui.LayoutView):
-    def __init__(self, cfg: GuildConfig | None = None) -> None:
-        super().__init__(timeout=None)
         perks = cfg.perks if cfg else []
-        body = (
-            "\n".join(f"• {p}" for p in perks)
+        perks_body = (
+            "\n".join(f"• {perk}" for perk in perks)
             if perks
             else config.DEFAULT_PERKS_MESSAGE
         )
 
         self.add_item(
             discord.ui.Container(
+                discord.ui.TextDisplay("### The Awakener"),
+                discord.ui.TextDisplay(
+                    f"**Timer:** the channel must be silent for **{cooldown}** before a message claims the role.\n"
+                    "**Rules:** the person who revives the chat after silence becomes the Awakener, "
+                    "and the previous holder loses the role."
+                ),
+                discord.ui.Separator(),
+                discord.ui.TextDisplay(f"-# {channel} · {role}"),
+                discord.ui.Separator(),
                 discord.ui.TextDisplay("### 🎁 Awakener Perks"),
-                discord.ui.TextDisplay(body),
+                discord.ui.TextDisplay(perks_body),
                 discord.ui.ActionRow(
-                    _nav_button("Info", "ℹ️", "awakener:perks_to_info", self.go_info),
                     *_link_buttons(),
                 ),
                 accent_colour=COLOUR,
             )
         )
-
-    async def go_info(self, interaction: discord.Interaction) -> None:
-        cfg = utils.get_config(interaction.guild_id)
-        await interaction.response.edit_message(view=InfoView(cfg))
 
 
 class ConfigView(discord.ui.LayoutView):
