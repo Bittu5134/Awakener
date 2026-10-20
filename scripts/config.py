@@ -5,10 +5,10 @@ from pathlib import Path
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 
-INVITE_URL = os.getenv("INVITE_URL", "")
-PATREON_URL = os.getenv("PATREON_URL", "")
-HELP_URL = os.getenv("HELP_URL", "")
-
+INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1561603393192067153"
+PATREON_URL = "https://www.patreon.com/c/LazyBittu"
+HELP_URL = "https://github.com/Bittu5134/Awakener"
+WEBSITE_URL = "https://github.com/Bittu5134/Awakener"
 # For Developement only, it will only register commands for this server if set.
 GUILD_ID = os.getenv("GUILD_ID")
 GUILD_ID = int(GUILD_ID) if GUILD_ID else None

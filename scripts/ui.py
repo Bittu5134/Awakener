@@ -45,6 +45,15 @@ def _link_buttons() -> list[discord.ui.Button]:
                 url=config.INVITE_URL,
             )
         )
+    if config.WEBSITE_URL:
+        buttons.append(
+            discord.ui.Button(
+                label="Website",
+                emoji="🌐",
+                style=discord.ButtonStyle.link,
+                url=config.WEBSITE_URL,
+            )
+        )
     if config.PATREON_URL:
         buttons.append(
             discord.ui.Button(
@@ -88,10 +97,10 @@ class InfoView(discord.ui.LayoutView):
                     "and the previous holder loses the role."
                 ),
                 discord.ui.Separator(),
-                discord.ui.TextDisplay(f"-# {channel} · {role}"),
-                discord.ui.Separator(),
-                discord.ui.TextDisplay("### 🎁 Awakener Perks"),
+                discord.ui.TextDisplay("### Role Perks"),
                 discord.ui.TextDisplay(perks_body),
+                discord.ui.Separator(),
+                discord.ui.TextDisplay(f"-# {channel} · {role} · /awaken"),
                 discord.ui.ActionRow(
                     *_link_buttons(),
                 ),
