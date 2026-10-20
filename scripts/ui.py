@@ -1,27 +1,14 @@
 """Components V2 panels, persistent views, and the /config panel."""
 
-from typing import cast
-
 import discord
 
-from . import config
+from . import config, db, utils
 from .db import GuildConfig, GuildState
-from .utils import ConfigStore
 
 COLOUR = discord.Colour.gold()
 
 
-def _store(interaction: discord.Interaction) -> ConfigStore:
-    return cast("ConfigStore", interaction.client)
-
-
-def _config_for(store: ConfigStore, guild_id: int | None) -> GuildConfig:
-    gid = guild_id or 0
-    return store.configs.get(gid) or GuildConfig(guild_id=gid)
-
-
 def _parse_cooldown(raw: str) -> int | None:
-    """Parse minutes, or seconds when suffixed with 's' (e.g. 10s for testing)."""
     raw = raw.strip().lower()
     try:
         if raw.endswith("s"):
@@ -36,24 +23,22 @@ def _parse_cooldown(raw: str) -> int | None:
 
 
 def _format_cooldown_input(secs: int) -> str:
-    if secs % 60 == 0:
-        return str(secs // 60)
-    return f"{secs}s"
+    return str(secs // 60) if secs % 60 == 0 else f"{secs}s"
 
 
 def _nav_button(label: str, emoji: str, custom_id: str, callback) -> discord.ui.Button:
-    button = discord.ui.Button(
+    btn = discord.ui.Button(
         label=label,
         emoji=emoji,
         style=discord.ButtonStyle.secondary,
         custom_id=custom_id,
     )
-    button.callback = callback
-    return button
+    btn.callback = callback
+    return btn
 
 
 def _link_buttons() -> list[discord.ui.Button]:
-    buttons: list[discord.ui.Button] = []
+    buttons = []
     if config.INVITE_URL:
         buttons.append(
             discord.ui.Button(
@@ -75,53 +60,25 @@ def _link_buttons() -> list[discord.ui.Button]:
     return buttons
 
 
-# --------------------------------------------------------------------------- #
-# Plain text helpers (used as TextDisplay content)
-# --------------------------------------------------------------------------- #
-
-
-def build_status_text(guild: discord.Guild, store: ConfigStore) -> str:
-    cfg = store.configs.get(guild.id)
-    state = store.states.get(guild.id)
-
-    if cfg is None or not cfg.channel_id or not cfg.role_id:
-        return (
-            "⚠️ Awakener is not configured yet. An admin can set it up with `/config`."
-        )
-
-    role = guild.get_role(cfg.role_id)
-    role_mention = role.mention if role else f"<@&{cfg.role_id}>"
-
-    if state and state.current_holder_id:
-        return f"{role_mention} is currently held by <@{state.current_holder_id}>."
-    return f"{role_mention} is currently unclaimed."
-
-
-def build_claim_text(author: discord.Member, role: discord.Role) -> str:
-    return f"{role.mention} has been claimed by {author.mention}!"
-
-
-# --------------------------------------------------------------------------- #
-# Public status view (claim messages and /awakener)
-# --------------------------------------------------------------------------- #
+def _cfg(guild_id: int | None) -> GuildConfig:
+    return utils.configs.get(guild_id) or GuildConfig(guild_id=guild_id or 0)
 
 
 class AwakenerStatusView(discord.ui.View):
-    """Persistent buttons for a plain-text status message."""
-
-    def __init__(self, text: str = "### 🔥 The Awakener") -> None:
+    def __init__(self) -> None:
         super().__init__(timeout=None)
-        self.text = text
         self.add_item(_nav_button("Info", "ℹ️", "awakener:info", self.show_info))
         self.add_item(_nav_button("Perks", "🎁", "awakener:perks", self.show_perks))
 
     async def show_info(self, interaction: discord.Interaction) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.send_message(view=InfoView(cfg), ephemeral=True)
+        await interaction.response.send_message(
+            view=InfoView(_cfg(interaction.guild_id)), ephemeral=True
+        )
 
     async def show_perks(self, interaction: discord.Interaction) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.send_message(view=PerksView(cfg), ephemeral=True)
+        await interaction.response.send_message(
+            view=PerksView(_cfg(interaction.guild_id)), ephemeral=True
+        )
 
 
 class InfoView(discord.ui.LayoutView):
@@ -150,8 +107,9 @@ class InfoView(discord.ui.LayoutView):
         )
 
     async def go_perks(self, interaction: discord.Interaction) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.edit_message(view=PerksView(cfg))
+        await interaction.response.edit_message(
+            view=PerksView(_cfg(interaction.guild_id))
+        )
 
 
 class PerksView(discord.ui.LayoutView):
@@ -159,7 +117,7 @@ class PerksView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         perks = cfg.perks if cfg else []
         body = (
-            "\n".join(f"• {perk}" for perk in perks)
+            "\n".join(f"• {p}" for p in perks)
             if perks
             else config.DEFAULT_PERKS_MESSAGE
         )
@@ -177,18 +135,12 @@ class PerksView(discord.ui.LayoutView):
         )
 
     async def go_info(self, interaction: discord.Interaction) -> None:
-        cfg = _store(interaction).configs.get(interaction.guild_id or 0)
-        await interaction.response.edit_message(view=InfoView(cfg))
-
-
-# --------------------------------------------------------------------------- #
-# /config panel
-# --------------------------------------------------------------------------- #
+        await interaction.response.edit_message(
+            view=InfoView(_cfg(interaction.guild_id))
+        )
 
 
 class ConfigView(discord.ui.LayoutView):
-    """Admin panel. Selects and buttons save instantly and re-render the panel."""
-
     def __init__(self, cfg: GuildConfig | None = None) -> None:
         super().__init__(timeout=None)
         cfg = cfg or GuildConfig(guild_id=0)
@@ -243,32 +195,32 @@ class ConfigView(discord.ui.LayoutView):
         )
 
     async def on_channel(self, interaction: discord.Interaction) -> None:
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         channel = self.channel_select.values[0]
 
         if cfg.channel_id != channel.id:
             cfg.channel_id = channel.id
-            await store.persist_config(cfg)
-            state = store.states.get(cfg.guild_id) or GuildState(guild_id=cfg.guild_id)
+            await db.save_config(utils.db_conn, cfg)
+            state = utils.states.setdefault(
+                cfg.guild_id, GuildState(guild_id=cfg.guild_id)
+            )
             state.last_message_ts = None
-            await store.persist_state(state)
+            await db.save_state(utils.db_conn, state)
 
         await interaction.response.edit_message(view=ConfigView(cfg))
 
     async def on_role(self, interaction: discord.Interaction) -> None:
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         cfg.role_id = self.role_select.values[0].id
-        await store.persist_config(cfg)
+        await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))
 
     async def on_cooldown(self, interaction: discord.Interaction) -> None:
-        cfg = _config_for(_store(interaction), interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         await interaction.response.send_modal(CooldownModal(cfg.cooldown_secs))
 
     async def on_perks(self, interaction: discord.Interaction) -> None:
-        cfg = _config_for(_store(interaction), interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         await interaction.response.send_modal(PerksModal(cfg.perks_text))
 
 
@@ -287,17 +239,14 @@ class CooldownModal(discord.ui.Modal, title="Set Awakener Cooldown"):
         secs = _parse_cooldown(str(self.cooldown))
         if secs is None:
             await interaction.response.send_message(
-                f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–"
-                f"{config.MAX_COOLDOWN_MINS} minutes** (e.g. `60`), "
-                "or `10s`–`21600s` for testing.",
+                f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS} minutes** (e.g. `60`), or `10s`–`21600s` for testing.",
                 ephemeral=True,
             )
             return
 
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         cfg.cooldown_secs = secs
-        await store.persist_config(cfg)
+        await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))
 
 
@@ -315,10 +264,9 @@ class PerksModal(discord.ui.Modal, title="Edit Awakener Perks"):
         self.perks.default = current_perks or None
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        store = _store(interaction)
-        cfg = _config_for(store, interaction.guild_id)
+        cfg = _cfg(interaction.guild_id)
         cfg.perks_text = "\n".join(
             line.strip() for line in str(self.perks).splitlines() if line.strip()
         )
-        await store.persist_config(cfg)
+        await db.save_config(utils.db_conn, cfg)
         await interaction.response.edit_message(view=ConfigView(cfg))

@@ -6,7 +6,6 @@ Cooldown is stored in seconds internally; admins configure it in minutes.
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Coroutine
 
 import aiosqlite
 
@@ -129,7 +128,9 @@ def _row_to_state(row: aiosqlite.Row) -> GuildState:
         guild_id=row["guild_id"],
         last_message_ts=_parse_iso(row["last_message_ts"]),
         current_holder_id=row["current_holder_id"],
-        last_claim_msg_id=row["last_claim_msg_id"] if "last_claim_msg_id" in keys else None,
+        last_claim_msg_id=(
+            row["last_claim_msg_id"] if "last_claim_msg_id" in keys else None
+        ),
     )
 
 
