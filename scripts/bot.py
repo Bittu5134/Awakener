@@ -7,7 +7,6 @@ from . import config, db, utils
 from .ui import (
     AwakenerStatusView,
     ConfigView,
-    InfoView,
 )
 
 log = logging.getLogger(__name__)
@@ -40,7 +39,6 @@ async def setup_hook():
     utils.states = await db.load_states(utils.db_conn)
 
     bot.add_view(AwakenerStatusView())
-    bot.add_view(InfoView())
 
     if config.GUILD_ID:
         guild = discord.Object(id=config.GUILD_ID)
@@ -72,7 +70,20 @@ async def on_message(message: discord.Message):
 
     state = utils.get_state(message.guild.id)
     now = discord.utils.utcnow()
+
     previous_ts = state.last_message_ts
+    state.last_message_ts = now
+    await db.save_state(utils.db_conn, state)
+
+    # Delete the previous claim message if chat has resumed
+    if state.last_claim_msg_id:
+        try:
+            msg = await message.channel.fetch_message(state.last_claim_msg_id)
+            await msg.delete()
+        except Exception:
+            pass
+        state.last_claim_msg_id = None
+        await db.save_state(utils.db_conn, state)
 
     if not previous_ts or (now - previous_ts).total_seconds() < cfg.cooldown_secs:
         return
@@ -82,18 +93,6 @@ async def on_message(message: discord.Message):
     role = message.guild.get_role(cfg.role_id)
     if not role or utils.role_problem(message.guild, role):
         return
-
-    # Delete the previous claim message if it exists
-    if state.last_claim_msg_id:
-        try:
-            msg = await message.channel.fetch_message(state.last_claim_msg_id)
-            await msg.delete()
-        except Exception:
-            pass
-        state.last_claim_msg_id = None
-
-    state.last_message_ts = now
-    await db.save_state(utils.db_conn, state)
 
     # Remove role from previous holder and add it to the new holder
     if state.current_holder_id:

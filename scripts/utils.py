@@ -22,11 +22,19 @@ def get_state(guild_id: int) -> GuildState:
 def get_status_text(guild: discord.Guild) -> str:
     cfg = configs.get(guild.id)
     if not cfg or not cfg.role_id or not cfg.channel_id:
-        return "⚠️ Awakener is not configured yet. An admin can set it up with `/config`."
+        return (
+            "⚠️ Awakener is not configured yet. An admin can set it up with `/config`."
+        )
 
     state = states.get(guild.id)
-    holder = f"<@{state.current_holder_id}>" if state and state.current_holder_id else None
-    return f"<@&{cfg.role_id}> is currently held by {holder}." if holder else f"<@&{cfg.role_id}> is currently unclaimed."
+    holder = (
+        f"<@{state.current_holder_id}>" if state and state.current_holder_id else None
+    )
+    return (
+        f"<@&{cfg.role_id}> is currently held by {holder}."
+        if holder
+        else f"<@&{cfg.role_id}> is currently unclaimed."
+    )
 
 
 def role_problem(guild: discord.Guild, role: discord.Role) -> str | None:
