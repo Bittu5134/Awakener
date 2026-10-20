@@ -174,7 +174,6 @@ class AwakenerBot(discord.Client):
         await self.persist_state(state)
 
         text = build_claim_text(message.author, role)
-        print(text)
         try:
             claim_msg = await message.channel.send(
                 content=text,
