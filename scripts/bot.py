@@ -125,6 +125,16 @@ class AwakenerBot(discord.Client):
         now = discord.utils.utcnow()
         previous_ts = state.last_message_ts
 
+        # If a claim message is still sitting there, delete it as soon as chat resumes.
+        if state.last_claim_msg_id:
+            old_id = state.last_claim_msg_id
+            state.last_claim_msg_id = None
+            try:
+                msg_to_delete = await message.channel.fetch_message(old_id)
+                await msg_to_delete.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
         # Always book-keep the newest human message so the timer restarts.
         state.last_message_ts = now
         await self.persist_state(state)
@@ -164,13 +174,17 @@ class AwakenerBot(discord.Client):
         await self.persist_state(state)
 
         text = build_claim_text(message.author, role)
+        print(text)
         try:
-            await message.channel.send(
-                view=AwakenerStatusView(text),
+            claim_msg = await message.channel.send(
+                content=text,
+                view=AwakenerStatusView(),
                 reference=message,
                 mention_author=False,
                 silent=True,
             )
+            state.last_claim_msg_id = claim_msg.id
+            await self.persist_state(state)
         except (discord.Forbidden, discord.HTTPException) as exc:
             log.warning(
                 "Guild %s: failed to send the claim message (%s).", guild.id, exc

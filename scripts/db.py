@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS guild_config (
 CREATE TABLE IF NOT EXISTS guild_state (
     guild_id          INTEGER PRIMARY KEY,
     last_message_ts   TEXT,
-    current_holder_id INTEGER
+    current_holder_id INTEGER,
+    last_claim_msg_id INTEGER
 );
 """.format(default_secs=config.DEFAULT_COOLDOWN_SECS)
 
@@ -49,6 +50,7 @@ class GuildState:
     guild_id: int
     last_message_ts: datetime | None = None
     current_holder_id: int | None = None
+    last_claim_msg_id: int | None = None
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -69,12 +71,15 @@ async def open_db(path) -> aiosqlite.Connection:
     await db.executescript(SCHEMA)
     await db.commit()
     await _migrate_cooldown_seconds(db)
+    await _migrate_claim_msg_id(db)
     return db
 
 
-async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
-    rows = await db.execute_fetchall(f"PRAGMA table_info({table})")
-    return {row["name"] for row in rows}
+async def _migrate_claim_msg_id(db: aiosqlite.Connection) -> None:
+    columns = await _table_columns(db, "guild_state")
+    if "last_claim_msg_id" not in columns:
+        await db.execute("ALTER TABLE guild_state ADD COLUMN last_claim_msg_id INTEGER")
+        await db.commit()
 
 
 async def _migrate_cooldown_seconds(db: aiosqlite.Connection) -> None:
@@ -103,6 +108,11 @@ async def _migrate_cooldown_seconds(db: aiosqlite.Connection) -> None:
     log.info("Migration complete.")
 
 
+async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
+    rows = await db.execute_fetchall(f"PRAGMA table_info({table})")
+    return {row["name"] for row in rows}
+
+
 def _row_to_config(row: aiosqlite.Row) -> GuildConfig:
     return GuildConfig(
         guild_id=row["guild_id"],
@@ -114,10 +124,12 @@ def _row_to_config(row: aiosqlite.Row) -> GuildConfig:
 
 
 def _row_to_state(row: aiosqlite.Row) -> GuildState:
+    keys = row.keys()
     return GuildState(
         guild_id=row["guild_id"],
         last_message_ts=_parse_iso(row["last_message_ts"]),
         current_holder_id=row["current_holder_id"],
+        last_claim_msg_id=row["last_claim_msg_id"] if "last_claim_msg_id" in keys else None,
     )
 
 
@@ -157,16 +169,18 @@ async def save_config(db: aiosqlite.Connection, config_row: GuildConfig) -> None
 async def save_state(db: aiosqlite.Connection, state: GuildState) -> None:
     await db.execute(
         """
-        INSERT INTO guild_state (guild_id, last_message_ts, current_holder_id)
-        VALUES (?, ?, ?)
+        INSERT INTO guild_state (guild_id, last_message_ts, current_holder_id, last_claim_msg_id)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(guild_id) DO UPDATE SET
             last_message_ts   = excluded.last_message_ts,
-            current_holder_id = excluded.current_holder_id
+            current_holder_id = excluded.current_holder_id,
+            last_claim_msg_id = excluded.last_claim_msg_id
         """,
         (
             state.guild_id,
             state.last_message_ts.isoformat() if state.last_message_ts else None,
             state.current_holder_id,
+            state.last_claim_msg_id,
         ),
     )
     await db.commit()

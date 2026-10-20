@@ -106,21 +106,14 @@ def build_claim_text(author: discord.Member, role: discord.Role) -> str:
 # --------------------------------------------------------------------------- #
 
 
-class AwakenerStatusView(discord.ui.LayoutView):
-    """Persistent. Pass the status or claim line as `text`."""
+class AwakenerStatusView(discord.ui.View):
+    """Persistent buttons for a plain-text status message."""
 
     def __init__(self, text: str = "### 🔥 The Awakener") -> None:
         super().__init__(timeout=None)
-        self.add_item(
-            discord.ui.Container(
-                discord.ui.TextDisplay(text),
-                discord.ui.ActionRow(
-                    _nav_button("Info", "ℹ️", "awakener:info", self.show_info),
-                    _nav_button("Perks", "🎁", "awakener:perks", self.show_perks),
-                ),
-                accent_colour=COLOUR,
-            )
-        )
+        self.text = text
+        self.add_item(_nav_button("Info", "ℹ️", "awakener:info", self.show_info))
+        self.add_item(_nav_button("Perks", "🎁", "awakener:perks", self.show_perks))
 
     async def show_info(self, interaction: discord.Interaction) -> None:
         cfg = _store(interaction).configs.get(interaction.guild_id or 0)
