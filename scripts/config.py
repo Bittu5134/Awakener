@@ -1,11 +1,9 @@
-"""Shared configuration file."""
-
 import os
 from pathlib import Path
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 
-INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1561603393192067153"
+INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1561603393192067153&permissions=268504064&integration_type=0&scope=bot+applications.commands"
 PATREON_URL = "https://www.patreon.com/c/LazyBittu"
 HELP_URL = "https://github.com/Bittu5134/Awakener"
 WEBSITE_URL = "https://github.com/Bittu5134/Awakener"
@@ -17,7 +15,7 @@ GUILD_ID = int(GUILD_ID) if GUILD_ID else None
 DB_PATH = Path(os.getenv("DB_PATH", "awakener.db"))
 LEADERBOARD_DB_PATH = DB_PATH.with_name("leaderboard.db")
 
-MIN_COOLDOWN_MINS = 5
+MIN_COOLDOWN_MINS = 1
 MAX_COOLDOWN_MINS = 360
 DEFAULT_COOLDOWN_SECS = 5 * 60
 

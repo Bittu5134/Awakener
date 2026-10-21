@@ -38,7 +38,7 @@ def _ts_write_due(guild_id: int, now: datetime) -> bool:
 @app_commands.guild_only()
 async def awaken_command(interaction: discord.Interaction) -> None:
     text = utils.get_status_text(interaction.guild)
-    await interaction.response.send_message(view=AwakenerStatusView(text))
+    await interaction.response.send_message(view=AwakenerStatusView(text), silent=True)
 
 
 @tree.command(name="config", description="Configure the Awakener bot")
@@ -53,7 +53,7 @@ async def config_command(interaction: discord.Interaction) -> None:
 @app_commands.guild_only()
 async def leaderboard_command(interaction: discord.Interaction) -> None:
     rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
-    await interaction.response.send_message(view=LeaderboardView(rows))
+    await interaction.response.send_message(view=LeaderboardView(rows), silent=True)
 
 
 @bot.event
@@ -148,7 +148,7 @@ async def on_message(message: discord.Message):
             ),
             reference=message,
             mention_author=False,
-            silent=True,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         state.last_claim_msg_id = claim_msg.id
     except Exception:

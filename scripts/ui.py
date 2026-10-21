@@ -1,5 +1,3 @@
-"""Components V2 panels, persistent views, and the /config panel."""
-
 import re
 
 import discord
@@ -204,7 +202,7 @@ class InfoView(discord.ui.LayoutView):
 
     async def show_leaderboard(self, interaction: discord.Interaction) -> None:
         rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
-        await interaction.response.send_message(view=LeaderboardView(rows))
+        await interaction.response.send_message(view=LeaderboardView(rows), silent=True)
 
 
 # --------------------------------------------------------------------------- #
