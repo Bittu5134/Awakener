@@ -136,7 +136,7 @@ class AwakenerStatusView(discord.ui.LayoutView):
             cfg = utils.get_config(interaction.guild_id)
             top_rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 3)
             await interaction.followup.send(
-                view=InfoView(cfg, top_rows), ephemeral=True
+                view=InfoView(cfg, top_rows), ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
             )
         except (discord.NotFound, discord.HTTPException):
             pass

@@ -2,6 +2,7 @@ tests
 leaderboard.db
 leaderboard.db*
 .wakatime-project
+.pi
 
 
 # Byte-compiled / optimized / DLL files
