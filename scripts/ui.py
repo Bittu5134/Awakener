@@ -10,10 +10,7 @@ ROLE_REF_RE = re.compile(r"@([\w\-]+)")
 
 COLOUR = discord.Colour.dark_gold()
 
-COOLDOWN_VALIDATION_MSG = (
-    f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS} minutes** "
-    f"(e.g. `60`) or `10s`–`{config.MAX_COOLDOWN_SECS}s` for testing."
-)
+COOLDOWN_VALIDATION_MSG = f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS} minutes** (e.g. `60`)."
 
 
 # --------------------------------------------------------------------------- #
@@ -44,21 +41,17 @@ def _resolve_role_refs(text: str, guild: discord.Guild) -> str:
 
 
 def _parse_cooldown(raw: str) -> int | None:
-    raw = raw.strip().lower()
     try:
-        if raw.endswith("s"):
-            secs = int(raw[:-1])
-            return secs if 5 <= secs <= config.MAX_COOLDOWN_SECS else None
-        minutes = int(raw)
-        if config.MIN_COOLDOWN_MINS <= minutes <= config.MAX_COOLDOWN_MINS:
-            return minutes * 60
+        minutes = int(raw.strip())
     except ValueError:
-        pass
+        return None
+    if config.MIN_COOLDOWN_MINS <= minutes <= config.MAX_COOLDOWN_MINS:
+        return minutes * 60
     return None
 
 
 def _format_cooldown_input(secs: int) -> str:
-    return str(secs // 60) if secs % 60 == 0 else f"{secs}s"
+    return str(secs // 60)
 
 
 def _button(
@@ -424,9 +417,9 @@ class CancelledResultView(discord.ui.LayoutView):
 
 class CooldownModal(discord.ui.Modal, title="Cooldown"):
     cooldown = discord.ui.TextInput(
-        label=f"Minutes ({config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS}) or seconds",
-        placeholder=f"60  •  10s for testing  •  {config.MAX_COOLDOWN_MINS}",
-        max_length=10,
+        label=f"Minutes ({config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS})",
+        placeholder=f"{config.MIN_COOLDOWN_MINS}  •  60  •  {config.MAX_COOLDOWN_MINS}",
+        max_length=5,
     )
 
     def __init__(self, current_secs: int = config.DEFAULT_COOLDOWN_SECS) -> None:
