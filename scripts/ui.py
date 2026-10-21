@@ -1,6 +1,8 @@
-import re
-import discord
+"""Components V2 panels, persistent views, and the /config panel."""
 
+import re
+
+import discord
 
 from . import config, db, utils, leaderboard_db
 from .db import GuildConfig
@@ -10,7 +12,10 @@ ROLE_REF_RE = re.compile(r"@([\w\-]+)")
 
 COLOUR = discord.Colour.dark_gold()
 
-COOLDOWN_VALIDATION_MSG = f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS} minutes** (e.g. `60`)."
+COOLDOWN_VALIDATION_MSG = (
+    f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}–{config.MAX_COOLDOWN_MINS} "
+    f"minutes** (e.g. `60`)."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -19,7 +24,6 @@ COOLDOWN_VALIDATION_MSG = f"Invalid cooldown. Enter **{config.MIN_COOLDOWN_MINS}
 
 
 def _resolve_channel_refs(text: str, guild: discord.Guild) -> str:
-
     def replace(match: re.Match[str]) -> str:
         name = match.group(1).lower()
         channel = discord.utils.find(lambda c: c.name.lower() == name, guild.channels)
@@ -29,7 +33,6 @@ def _resolve_channel_refs(text: str, guild: discord.Guild) -> str:
 
 
 def _resolve_role_refs(text: str, guild: discord.Guild) -> str:
-
     def replace(match: re.Match[str]) -> str:
         name = match.group(1).lower()
         role = discord.utils.find(
@@ -98,13 +101,13 @@ def _perks_summary(cfg: GuildConfig) -> str:
     return f"{count} set" if count else "none"
 
 
-def _entries_text(rows: list[tuple[int, int]], medals: bool = True) -> str:
-    """One line per leaderboard entry; medals for top 3 when medals=True."""
+def _entries_text(rows: list[tuple[int, int]]) -> str:
+    """One line per leaderboard entry; medals for the top 3."""
     if not rows:
         return "Nobody has awakened the chat yet."
     lines = []
     for index, (user_id, count) in enumerate(rows):
-        prefix = ("🥇", "🥈", "🥉")[index] if medals and index < 3 else "•"
+        prefix = ("🥇", "🥈", "🥉")[index] if index < 3 else "•"
         lines.append(
             f"{prefix} <@{user_id}> — {count} awakening{'s' if count != 1 else ''}"
         )
@@ -178,7 +181,8 @@ class InfoView(discord.ui.LayoutView):
             discord.ui.TextDisplay(
                 f"If {channel} stays quiet for **{cooldown}**, the first person to "
                 "revive it gains the role.\n"
-                "If the chat goes quiet again, you lose it. Only one person can hold the role at a time."
+                "If the chat goes quiet again, you lose it. "
+                "Only one person can hold the role at a time."
             ),
             discord.ui.Separator(),
             discord.ui.TextDisplay("**Top Awakeners**"),
@@ -319,11 +323,13 @@ class ConfigView(discord.ui.LayoutView):
     async def on_purge(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
+
         await interaction.response.send_message(view=PurgeConfirmView(), ephemeral=True)
 
     async def on_reset(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
+
         await interaction.response.send_message(view=ResetConfirmView(), ephemeral=True)
 
 
@@ -336,7 +342,8 @@ class PurgeConfirmView(discord.ui.LayoutView):
         self.add_item(
             discord.ui.Container(
                 discord.ui.TextDisplay(
-                    "This will remove leaderboard entries for members no longer in the server. Continue?"
+                    "This will remove leaderboard entries for members no longer "
+                    "in the server. Continue?"
                 ),
                 discord.ui.ActionRow(confirm, cancel),
                 accent_colour=COLOUR,
@@ -346,6 +353,7 @@ class PurgeConfirmView(discord.ui.LayoutView):
     async def do_purge(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
+
         present = [member.id for member in interaction.guild.members]
         rows = await leaderboard_db.all_rows(utils.lb_conn, interaction.guild_id)
         await leaderboard_db.purge_missing(utils.lb_conn, interaction.guild_id, present)
@@ -354,17 +362,6 @@ class PurgeConfirmView(discord.ui.LayoutView):
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(view=CancelledResultView())
-
-
-class PurgeResultView(discord.ui.LayoutView):
-    def __init__(self, removed: int) -> None:
-        super().__init__(timeout=None)
-        self.add_item(
-            discord.ui.Container(
-                discord.ui.TextDisplay(f"✅ Purged {removed} gone member entries."),
-                accent_colour=COLOUR,
-            )
-        )
 
 
 class ResetConfirmView(discord.ui.LayoutView):
@@ -386,11 +383,23 @@ class ResetConfirmView(discord.ui.LayoutView):
     async def do_reset(self, interaction: discord.Interaction) -> None:
         if await _deny_non_admin(interaction):
             return
+
         await leaderboard_db.reset_guild(utils.lb_conn, interaction.guild_id)
         await interaction.response.edit_message(view=ResetResultView())
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(view=CancelledResultView())
+
+
+class PurgeResultView(discord.ui.LayoutView):
+    def __init__(self, removed: int) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay(f"✅ Purged {removed} gone member entries."),
+                accent_colour=COLOUR,
+            )
+        )
 
 
 class ResetResultView(discord.ui.LayoutView):

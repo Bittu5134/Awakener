@@ -1,4 +1,4 @@
-"""Shared configuration file"""
+"""Shared configuration file."""
 
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ PATREON_URL = "https://www.patreon.com/c/LazyBittu"
 HELP_URL = "https://github.com/Bittu5134/Awakener"
 WEBSITE_URL = "https://github.com/Bittu5134/Awakener"
 
-# Dev mode Only
+# For Developement only, it will only register commands for this server if set.
 GUILD_ID = os.getenv("GUILD_ID")
 GUILD_ID = int(GUILD_ID) if GUILD_ID else None
 

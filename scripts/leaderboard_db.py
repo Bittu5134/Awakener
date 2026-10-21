@@ -1,5 +1,3 @@
-"""Per-guild awakening counts. Stored in a separate SQLite file, leaderboard.db."""
-
 import aiosqlite
 
 SCHEMA = """

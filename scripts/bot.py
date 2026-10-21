@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 import discord
 from discord import app_commands
@@ -12,10 +13,25 @@ from .ui import (
 
 log = logging.getLogger(__name__)
 
-intents = discord.Intents.default()
+intents = discord.Intents.none()
+intents.guilds = True
 intents.members = True
+intents.messages = True
+
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
+
+TS_WRITE_INTERVAL = 30
+_ts_saved: dict[int, float] = {}
+
+
+def _ts_write_due(guild_id: int, now: datetime) -> bool:
+    ts = now.timestamp()
+    last = _ts_saved.get(guild_id)
+    if last is None or ts - last >= TS_WRITE_INTERVAL:
+        _ts_saved[guild_id] = ts
+        return True
+    return False
 
 
 @tree.command(name="awaken", description="Show who currently holds the Awakener role")
@@ -83,7 +99,8 @@ async def on_message(message: discord.Message):
     # Same holder speaking again
     if state.current_holder_id == message.author.id:
         state.last_message_ts = now
-        await db.save_state(utils.db_conn, state)
+        if _ts_write_due(message.guild.id, now):
+            await db.save_state(utils.db_conn, state)
         return
 
     # A different person speaking after silence: this message awakens.
@@ -91,7 +108,8 @@ async def on_message(message: discord.Message):
     state.last_message_ts = now
 
     if not previous_ts or (now - previous_ts).total_seconds() < cfg.cooldown_secs:
-        await db.save_state(utils.db_conn, state)
+        if _ts_write_due(message.guild.id, now):
+            await db.save_state(utils.db_conn, state)
         return
 
     role = message.guild.get_role(cfg.role_id)
@@ -100,16 +118,10 @@ async def on_message(message: discord.Message):
         return
 
     # Hand off the role
-    if state.current_holder_id:
+    prev = message.guild.get_member(state.current_holder_id)
+    if prev and role in prev.roles:
         try:
-            prev = message.guild.get_member(
-                state.current_holder_id
-            ) or await message.guild.fetch_member(state.current_holder_id)
-            if prev and role in prev.roles:
-                try:
-                    await prev.remove_roles(role, reason="Awakened by someone else")
-                except Exception:
-                    pass
+            await prev.remove_roles(role, reason="Awakened by someone else")
         except Exception:
             pass
 
@@ -120,14 +132,12 @@ async def on_message(message: discord.Message):
         return
 
     await leaderboard_db.increment(utils.lb_conn, message.guild.id, message.author.id)
-
     state.current_holder_id = message.author.id
 
-    # Delete the previous claim message, then send a fresh one
+    # Delete the previous claim message, then send a fresh one.
     if state.last_claim_msg_id:
         try:
-            msg = await message.channel.fetch_message(state.last_claim_msg_id)
-            await msg.delete()
+            await message.channel.delete_messages([state.last_claim_msg_id])
         except Exception:
             pass
 
