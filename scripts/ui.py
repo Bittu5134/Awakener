@@ -131,11 +131,15 @@ class AwakenerStatusView(discord.ui.LayoutView):
         )
 
     async def show_info(self, interaction: discord.Interaction) -> None:
-        cfg = utils.get_config(interaction.guild_id)
-        top_rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 3)
-        await interaction.response.send_message(
-            view=InfoView(cfg, top_rows), ephemeral=True
-        )
+        try:
+            await interaction.response.defer(ephemeral=True)
+            cfg = utils.get_config(interaction.guild_id)
+            top_rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 3)
+            await interaction.followup.send(
+                view=InfoView(cfg, top_rows), ephemeral=True
+            )
+        except (discord.NotFound, discord.HTTPException):
+            pass
 
 
 # --------------------------------------------------------------------------- #
@@ -201,8 +205,16 @@ class InfoView(discord.ui.LayoutView):
         self.add_item(discord.ui.Container(*items, accent_colour=COLOUR))
 
     async def show_leaderboard(self, interaction: discord.Interaction) -> None:
-        rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
-        await interaction.response.send_message(view=LeaderboardView(rows), silent=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+            rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
+            await interaction.followup.send(
+                view=LeaderboardView(rows),
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.NotFound, discord.HTTPException):
+            pass
 
 
 # --------------------------------------------------------------------------- #

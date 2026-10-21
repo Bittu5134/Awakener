@@ -38,7 +38,10 @@ def _ts_write_due(guild_id: int, now: datetime) -> bool:
 @app_commands.guild_only()
 async def awaken_command(interaction: discord.Interaction) -> None:
     text = utils.get_status_text(interaction.guild)
-    await interaction.response.send_message(view=AwakenerStatusView(text), silent=True)
+    await interaction.response.send_message(
+        view=AwakenerStatusView(text), silent=True,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 @tree.command(name="config", description="Configure the Awakener bot")
@@ -52,8 +55,13 @@ async def config_command(interaction: discord.Interaction) -> None:
 @tree.command(name="leaderboard", description="Show the top awakeners of this server")
 @app_commands.guild_only()
 async def leaderboard_command(interaction: discord.Interaction) -> None:
+    await interaction.response.defer()
     rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
-    await interaction.response.send_message(view=LeaderboardView(rows), silent=True)
+    await interaction.followup.send(
+        view=LeaderboardView(rows),
+        silent=True,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 @bot.event
@@ -137,7 +145,7 @@ async def on_message(message: discord.Message):
     # Delete the previous claim message, then send a fresh one.
     if state.last_claim_msg_id:
         try:
-            await message.channel.delete_messages([state.last_claim_msg_id])
+            await message.channel.delete_messages([discord.Object(state.last_claim_msg_id)])
         except Exception:
             pass
 
