@@ -21,7 +21,7 @@ TOKEN = os.getenv("DISCORD_TOKEN", "")
 INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1561603393192067153&permissions=268504064&integration_type=0&scope=bot+applications.commands"
 PATREON_URL = "https://www.patreon.com/c/LazyBittu"
 HELP_URL = "https://github.com/Bittu5134/Awakener"
-WEBSITE_URL = "https://github.com/Bittu5134/Awakener"
+WEBSITE_URL = "https://awakener.bittu.dev"
 
 # For Developement only, it will only register commands for this server if set.
 GUILD_ID = os.getenv("GUILD_ID")
