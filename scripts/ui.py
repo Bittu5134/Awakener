@@ -143,6 +143,42 @@ class AwakenerStatusView(discord.ui.LayoutView):
 
 
 # --------------------------------------------------------------------------- #
+# First-run setup nudge (join card + unconfigured /awaken)
+# --------------------------------------------------------------------------- #
+
+
+class SetupView(discord.ui.LayoutView):
+    """Points a fresh server at /config, and opens it on demand."""
+
+    def __init__(self, body: str | None = None) -> None:
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Container(
+                discord.ui.TextDisplay("### Awakener is almost ready"),
+                discord.ui.TextDisplay(
+                    body
+                    or "Two settings are left: **one channel** to watch and **one role** "
+                    "to hand out. Whoever breaks a silence in that channel gets the role."
+                ),
+                discord.ui.ActionRow(
+                    _button("Set up", "awakener:setup", self.open_config, "⚙️")
+                ),
+                accent_colour=COLOUR,
+            )
+        )
+
+    async def open_config(self, interaction: discord.Interaction) -> None:
+        if await _deny_non_admin(interaction):
+            return
+        cfg = utils.get_config(interaction.guild_id)
+        await interaction.response.send_message(
+            view=ConfigView(cfg),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Leaderboard (public card)
 # --------------------------------------------------------------------------- #
 
