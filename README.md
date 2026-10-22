@@ -31,7 +31,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Configuration
-cp .env.example .env          # paste your DISCORD_TOKEN
+# Dont forget to add your DISCORD_TOKEN here
+cp .env.example .env
 
 # Start the bot
 python main.py
