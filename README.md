@@ -7,8 +7,8 @@
 **A chat-reviving Discord bot that crowns whoever wakes a silent channel.**
 
 
-[![Invite Awakener](https://img.shields.io/badge/Discord-Invite%20Bot-5865F2?logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1561603393192067153&permissions=268504064&integration_type=0&scope=bot+applications.commands)
-[![Join the server](https://img.shields.io/badge/Discord-Join%20server-5865F2?logo=discord&logoColor=white)](https://bittu.dev/discord/)
+[![Invite Awakener](https://img.shields.io/badge/Discord-Invite%20Bot-green?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1561603393192067153&permissions=268504064&integration_type=0&scope=bot+applications.commands)
+[![Join the server](https://img.shields.io/badge/Discord-Join%20server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://bittu.dev/discord/)
 
 </div>
 
