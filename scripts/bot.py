@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 
+import aiohttp
 import discord
 from discord import app_commands
 
@@ -9,6 +10,7 @@ from .ui import (
     AwakenerStatusView,
     ConfigView,
     LeaderboardView,
+    SetupView,
 )
 
 log = logging.getLogger(__name__)
@@ -37,6 +39,19 @@ def _ts_write_due(guild_id: int, now: datetime) -> bool:
 @tree.command(name="awaken", description="Show who currently holds the Awakener role")
 @app_commands.guild_only()
 async def awaken_command(interaction: discord.Interaction) -> None:
+    cfg = utils.configs.get(interaction.guild_id)
+    if not cfg or not cfg.channel_id or not cfg.role_id:
+        perms = getattr(interaction.user, "guild_permissions", None)
+        can_manage = bool(perms and perms.manage_guild)
+        await interaction.response.send_message(
+            view=SetupView(
+                body=None if can_manage else utils.get_status_text(interaction.guild)
+            ),
+            silent=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return
+
     text = utils.get_status_text(interaction.guild)
     await interaction.response.send_message(
         view=AwakenerStatusView(text), silent=True,
@@ -72,6 +87,7 @@ async def setup_hook():
     utils.states = await db.load_states(utils.db_conn)
 
     bot.add_view(AwakenerStatusView())
+    bot.add_view(SetupView())
 
     if config.GUILD_ID:
         guild = discord.Object(id=config.GUILD_ID)
@@ -85,6 +101,87 @@ async def setup_hook():
 @bot.event
 async def on_ready():
     log.info("Logged in as %s", bot.user)
+
+
+# --------------------------------------------------------------------------- #
+# Guild join / leave: first-run setup card + optional webhook log
+# --------------------------------------------------------------------------- #
+
+
+async def _post_log(content: str) -> None:
+    """Send one line to LOG_WEBHOOK_URL when it is configured."""
+    if not config.LOG_WEBHOOK_URL:
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            webhook = discord.Webhook.from_url(config.LOG_WEBHOOK_URL, session=session)
+            await webhook.send(
+                content=content,
+                username="Awakener Logs",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+    except Exception:
+        # Logging must never break an event handler.
+        log.warning("Could not post guild log", exc_info=True)
+
+
+async def _send_setup_card(guild: discord.Guild) -> None:
+    """Post the /config nudge once, wherever the bot is allowed to speak."""
+    cfg = utils.configs.get(guild.id)
+    if cfg and cfg.channel_id and cfg.role_id:
+        return
+
+    me = guild.me
+    target = None
+    if me is not None:
+        system = guild.system_channel
+        if system is not None and system.permissions_for(me).send_messages:
+            target = system
+        else:
+            target = next(
+                (
+                    channel
+                    for channel in guild.text_channels
+                    if channel.permissions_for(me).send_messages
+                ),
+                None,
+            )
+
+    if target is None:
+        log.info("No writable channel in guild %s; skipping setup card", guild.id)
+        return
+
+    try:
+        await target.send(
+            view=SetupView(),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.HTTPException:
+        log.warning("Setup card failed in guild %s", guild.id, exc_info=True)
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild) -> None:
+    log.info(
+        "Joined guild %s (%s) with %s members",
+        guild.name,
+        guild.id,
+        guild.member_count,
+    )
+    await _post_log(
+        f"➕ **Joined** {guild.name} (`{guild.id}`) · "
+        f"{guild.member_count} members · {len(bot.guilds)} guilds total"
+    )
+    await _send_setup_card(guild)
+
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild) -> None:
+    log.info("Removed from guild %s (%s)", guild.name, guild.id)
+    await _post_log(
+        f"➖ **Removed** {guild.name} (`{guild.id}`) · "
+        f"{len(bot.guilds)} guilds total"
+    )
 
 
 @bot.event
