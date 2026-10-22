@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/banner.png" alt="Awakener banner" width="880">
+<img id="Hero" src="./assets/banner.png" alt="Awakener banner" width="880">
 
 # Awakener
 
