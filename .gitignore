@@ -230,3 +230,6 @@ __marimo__/
 awakener.db
 awakener.db-wal
 awakener.db-shm
+
+# Local scratch exports (untracked)
+tmp/
