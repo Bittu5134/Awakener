@@ -51,6 +51,36 @@ async def top(
     return [(row["user_id"], row["count"]) for row in rows]
 
 
+async def stats(
+    db: aiosqlite.Connection, guild_id: int, user_id: int
+) -> tuple[int | None, int]:
+    """Return ``(rank, count)`` for one user, in the ordering ``top`` uses.
+
+    ``rank`` is ``None`` when the user has no counted awakening yet, so
+    callers can skip appending a row for them.
+    """
+    rows = await db.execute_fetchall(
+        """
+        SELECT count,
+               (
+                   SELECT COUNT(*) FROM awaken_counts AS other
+                   WHERE other.guild_id = counts.guild_id
+                     AND (
+                         other.count > counts.count
+                         OR (other.count = counts.count
+                             AND other.user_id < counts.user_id)
+                     )
+               ) + 1 AS rank
+        FROM awaken_counts AS counts
+        WHERE guild_id = ? AND user_id = ?
+        """,
+        (guild_id, user_id),
+    )
+    if not rows or not rows[0]["count"]:
+        return None, 0
+    return rows[0]["rank"], rows[0]["count"]
+
+
 async def all_rows(db: aiosqlite.Connection, guild_id: int) -> list[int]:
     rows = await db.execute_fetchall(
         "SELECT user_id FROM awaken_counts WHERE guild_id = ?", (guild_id,)

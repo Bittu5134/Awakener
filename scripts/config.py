@@ -42,6 +42,9 @@ DEFAULT_COOLDOWN_SECS = 5 * 60
 DEFAULT_PERKS_MESSAGE = "Use `/config` to add more perks here!"
 PERKS_MAX_LENGTH = 1800
 
+# Rows shown on /leaderboard before the caller's own rank is appended.
+LEADERBOARD_LIMIT = 10
+
 
 def format_cooldown(seconds: int) -> str:
     """Human-readable cooldown, minute-granular when possible."""
