@@ -71,9 +71,19 @@ async def config_command(interaction: discord.Interaction) -> None:
 @app_commands.guild_only()
 async def leaderboard_command(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
-    rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
+    rows = await leaderboard_db.top(
+        utils.lb_conn, interaction.guild_id, config.LEADERBOARD_LIMIT
+    )
+    rank, count = await leaderboard_db.stats(
+        utils.lb_conn, interaction.guild_id, interaction.user.id
+    )
     await interaction.followup.send(
-        view=LeaderboardView(rows),
+        view=LeaderboardView(
+            rows,
+            viewer_id=interaction.user.id,
+            viewer_rank=rank,
+            viewer_count=count,
+        ),
         silent=True,
         allowed_mentions=discord.AllowedMentions.none(),
     )

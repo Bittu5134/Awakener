@@ -99,16 +99,47 @@ def _perks_summary(cfg: GuildConfig) -> str:
     return f"{count} set" if count else "none"
 
 
-def _entries_text(rows: list[tuple[int, int]]) -> str:
-    """One line per leaderboard entry; medals for the top 3."""
-    if not rows:
+def _awakenings(count: int) -> str:
+    return f"{count} awakening{'s' if count != 1 else ''}"
+
+
+def _rank_prefix(index: int) -> str:
+    """Medals on the podium, plain rank numbers for everyone below it."""
+    return ("🥇", "🥈", "🥉")[index] if index < 3 else f"**#{index + 1}**"
+
+
+def _entries_text(
+    rows: list[tuple[int, int]],
+    viewer_id: int | None = None,
+    viewer_rank: int | None = None,
+    viewer_count: int = 0,
+) -> str:
+    """One line per leaderboard entry, then the viewer's rank if they missed out.
+
+    The viewer's own row is appended after a ``...`` break when they rank
+    below the rows that were fetched.
+    """
+    lines = [
+        f"{_rank_prefix(index)} <@{user_id}> — {_awakenings(count)}"
+        for index, (user_id, count) in enumerate(rows)
+    ]
+
+    if not lines and not viewer_count:
         return "Nobody has awakened the chat yet."
-    lines = []
-    for index, (user_id, count) in enumerate(rows):
-        prefix = ("🥇", "🥈", "🥉")[index] if index < 3 else "•"
+
+    outside_rows = (
+        viewer_id is not None
+        and viewer_count > 0
+        and viewer_rank is not None
+        and viewer_rank > len(rows)
+    )
+    if outside_rows:
+        if lines:
+            lines.append("...")
         lines.append(
-            f"{prefix} <@{user_id}> — {count} awakening{'s' if count != 1 else ''}"
+            f"**#{viewer_rank}** <@{viewer_id}> — {_awakenings(viewer_count)}"
         )
+
     return "\n".join(lines)
 
 
@@ -184,12 +215,20 @@ class SetupView(discord.ui.LayoutView):
 
 
 class LeaderboardView(discord.ui.LayoutView):
-    def __init__(self, rows: list[tuple[int, int]]) -> None:
+    def __init__(
+        self,
+        rows: list[tuple[int, int]],
+        viewer_id: int | None = None,
+        viewer_rank: int | None = None,
+        viewer_count: int = 0,
+    ) -> None:
         super().__init__(timeout=None)
         self.add_item(
             discord.ui.Container(
                 discord.ui.TextDisplay("### Top Awakeners"),
-                discord.ui.TextDisplay(_entries_text(rows)),
+                discord.ui.TextDisplay(
+                    _entries_text(rows, viewer_id, viewer_rank, viewer_count)
+                ),
                 discord.ui.TextDisplay("-# /leaderboard"),
                 accent_colour=COLOUR,
             )
@@ -243,9 +282,19 @@ class InfoView(discord.ui.LayoutView):
     async def show_leaderboard(self, interaction: discord.Interaction) -> None:
         try:
             await interaction.response.defer(ephemeral=True)
-            rows = await leaderboard_db.top(utils.lb_conn, interaction.guild_id, 10)
+            rows = await leaderboard_db.top(
+                utils.lb_conn, interaction.guild_id, config.LEADERBOARD_LIMIT
+            )
+            rank, count = await leaderboard_db.stats(
+                utils.lb_conn, interaction.guild_id, interaction.user.id
+            )
             await interaction.followup.send(
-                view=LeaderboardView(rows),
+                view=LeaderboardView(
+                    rows,
+                    viewer_id=interaction.user.id,
+                    viewer_rank=rank,
+                    viewer_count=count,
+                ),
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
